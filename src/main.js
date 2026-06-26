@@ -5,12 +5,12 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { seedFromString } from './01_prng.js';
 import { buildRegion } from './05_terrain.js';
-import { createScene, animate, resetView } from './10_renderer.js';
+import { createScene, animate } from './10_renderer.js';
 import { progressPanel, updateSeedDisplay } from './11_ui.js';
 
 let sceneState = null;
 
-function generate(template, seedStr) {
+function generate(template, seedStr, mountainCount) {
   const seed = seedFromString(seedStr);
   const seedNum = seed.toString(36).toUpperCase();
   updateSeedDisplay(seedNum);
@@ -30,7 +30,7 @@ function generate(template, seedStr) {
 
   let region;
   try {
-    region = buildRegion(template, 55, 55, seed);
+    region = buildRegion(template, 55, 55, seed, mountainCount);
   } catch (e) {
     console.error('terrain generation failed:', e);
     progressPanel.hide();
@@ -50,8 +50,9 @@ function generate(template, seedStr) {
 // ---- UI handlers ----
 function newIsland() {
   const template = document.getElementById('template-select').value;
+  const mountainCount = parseInt(document.getElementById('mountains-slider').value, 10);
   const randomSeed = Math.random().toString(36).substring(2, 10) + Date.now().toString(36);
-  generate(template, randomSeed);
+  generate(template, randomSeed, mountainCount);
 }
 
 function resetCamera() {
@@ -59,7 +60,7 @@ function resetCamera() {
   // re-read current region by re-generating isn't ideal — just reset view
   const cam = sceneState.camera;
   const ctrl = sceneState.controls;
-  cam.position.set(0, 15, 20);
+  cam.position.set(0, 120, 260);
   ctrl.target.set(0, 0, 0);
   ctrl.update();
 }
@@ -67,6 +68,9 @@ function resetCamera() {
 // ---- Init ----
 document.getElementById('btn-new').addEventListener('click', newIsland);
 document.getElementById('btn-lost').addEventListener('click', resetCamera);
+document.getElementById('mountains-slider').addEventListener('input', function() {
+  document.getElementById('mountains-value').textContent = this.value;
+});
 
 // Load URL seed or generate new
 const urlParams = new URLSearchParams(window.location.search);
@@ -76,14 +80,20 @@ const urlTemplate = urlParams.get('template');
 const initialTemplate = urlTemplate || 'island';
 document.getElementById('template-select').value = initialTemplate;
 
+const urlMountains = urlParams.get('mountains');
+const initialMountains = urlMountains ? parseInt(urlMountains, 10) : 200;
+document.getElementById('mountains-slider').value = initialMountains;
+document.getElementById('mountains-value').textContent = initialMountains;
+
 const initialSeed = urlSeed || (Math.random().toString(36).substring(2, 10) + Date.now().toString(36));
-generate(initialTemplate, initialSeed);
+generate(initialTemplate, initialSeed, initialMountains);
 
 // Update URL without reloading
-const updateURL = (template, seed) => {
+const updateURL = (template, seed, mountainCount) => {
   const url = new URL(window.location);
   url.searchParams.set('template', template);
   url.searchParams.set('seed', seed);
+  url.searchParams.set('mountains', mountainCount);
   history.replaceState({}, '', url);
 };
 
@@ -95,6 +105,7 @@ window.addEventListener('load', () => {
   btn.addEventListener('click', () => {
     origNewIsland();
     const seed = seedFromString(document.getElementById('seed-display').textContent.replace('seed: ', ''));
-    updateURL(document.getElementById('template-select').value, seed.toString(36));
+    const mc = document.getElementById('mountains-slider').value;
+    updateURL(document.getElementById('template-select').value, seed.toString(36), mc);
   });
 });

@@ -32,9 +32,9 @@ export class Skeleton {
       for (let i = 0; i < segs.length - 1; i++) {
         const a = segs[i];
         const b = segs[i + 1];
-        const mid = new Vec.Vec2(
-          (a.x + b.x) / 2 + (Math.random() - 0.5) * asymmetry * Vec.Vec2.dist(a, b) * 0.5,
-          (a.y + b.y) / 2 + (Math.random() - 0.5) * asymmetry * Vec.Vec2.dist(a, b) * 0.5
+        const mid = new Vec2(
+          (a.x + b.x) / 2 + (Math.random() - 0.5) * asymmetry * a.dist(b) * 0.5,
+          (a.y + b.y) / 2 + (Math.random() - 0.5) * asymmetry * a.dist(b) * 0.5
         );
         newSegs.push(a, mid);
       }
@@ -66,7 +66,7 @@ export class Skeleton {
 function distToSegmentSq(p, a, b) {
   const dx = b.x - a.x, dy = b.y - a.y;
   const lenSq = dx * dx + dy * dy;
-  if (lenSq === 0) return Vec.Vec2.distSq(p, a);
+  if (lenSq === 0) return distSq(p, a);
   let t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / lenSq;
   t = Math.max(0, Math.min(1, t));
   const cx = a.x + t * dx, cy = a.y + t * dy;
@@ -155,7 +155,7 @@ export class IslandRaiser {
 
   build(center) {
     // Main bone from center to top-right edge
-    const edge = new Vec.Vec2(center.x + this.radius, center.y + this.radius);
+    const edge = new Vec2(center.x + this.radius, center.y + this.radius);
     this.skeleton.addBone(center, 1.0, edge, 0.3);
     this.skeleton.shatter(this.skeleton.bones[0], 5, 0.5, 0.6);
 
@@ -184,7 +184,7 @@ export class ArchipelagoRaiser {
   raise(point) {
     let val = 0;
     for (const s of this.samples) {
-      const d = Vec.Vec2.dist(point, s);
+      const d = dist(point, s);
       val = Math.max(val, smoothstep(0.4, 0.0, d) - 0.2);
     }
     return val;
@@ -196,7 +196,7 @@ export class BayRaiser {
   constructor() {
     // Random direction vector pointing "into" the land
     const angle = Math.random() * Math.PI * 2;
-    this.dir = new Vec.Vec2(Math.cos(angle), Math.sin(angle));
+    this.dir = new Vec2(Math.cos(angle), Math.sin(angle));
   }
 
   raise(point) {
@@ -208,7 +208,7 @@ export class BayRaiser {
 export class CoastRaiser {
   constructor() {
     const angle = Math.random() * Math.PI * 2;
-    this.dir = new Vec.Vec2(Math.cos(angle), Math.sin(angle));
+    this.dir = new Vec2(Math.cos(angle), Math.sin(angle));
   }
 
   raise(point) {
@@ -226,8 +226,8 @@ export class FjordRaiser {
 
   build(center) {
     // Main spine
-    const endA = new Vec.Vec2(center.x - this.radius * 0.8, center.y);
-    const endB = new Vec.Vec2(center.x + this.radius * 0.8, center.y);
+    const endA = new Vec2(center.x - this.radius * 0.8, center.y);
+    const endB = new Vec2(center.x + this.radius * 0.8, center.y);
     this.skeleton.addBone(endA, 1.0, endB, 1.0);
     this.skeleton.shatter(this.skeleton.bones[0], 5, 0.5, 0.6);
 
@@ -240,8 +240,8 @@ export class FjordRaiser {
       const py = endA.y + t * (endB.y - endA.y);
       const perpAngle = Math.atan2(endB.y - endA.y, endB.x - endA.x) + Math.PI / 2;
       const len = this.radius * (0.3 + Math.random() * 0.4);
-      const incEnd = new Vec.Vec2(px + Math.cos(perpAngle) * len, py + Math.sin(perpAngle) * len);
-      this.incisions.push({ from: new Vec.Vec2(px, py), to: incEnd });
+      const incEnd = new Vec2(px + Math.cos(perpAngle) * len, py + Math.sin(perpAngle) * len);
+      this.incisions.push({ from: new Vec2(px, py), to: incEnd });
     }
   }
 
@@ -264,11 +264,11 @@ export class PeninsulaRaiser {
     this.radius = radius;
     const angle = Math.random() * Math.PI * 2;
     const girth = radius * 0.7;
-    const tip = new Vec.Vec2(
+    const tip = new Vec2(
       center.x + Math.cos(angle) * radius * 1.2,
       center.y + Math.sin(angle) * radius * 1.2
     );
-    const base = new Vec.Vec2(
+    const base = new Vec2(
       center.x - Math.cos(angle) * girth,
       center.y - Math.sin(angle) * girth
     );
@@ -289,7 +289,7 @@ export class LakeRaiser {
   }
 
   raise(point) {
-    const d = Vec.Vec2.dist(point, this.center) / this.radius;
+    const d = dist(point, this.center) / this.radius;
     // High in center, low at edge (inverted)
     return 1.0 - smoothstep(0.0, 1.1, d);
   }

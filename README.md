@@ -1,13 +1,14 @@
 # Perilous Shores 3D
 
-A browser-based 3D terrain generator that combines **Perilous Shores**' procedural island/map generation pipeline with a **Three.js** first-person/OrbitControls 3D renderer.
+A browser-based 3D terrain generator using a **cartoon-style mountain** approach on a **320×320 km** map, rendered with **Three.js** OrbitControls.
 
 **Live site:** https://0xPaladin.github.io/Outlands/
 
 ## Tech Stack
 
 - **Three.js r185** — 3D rendering, `BufferGeometry`, `MeshLambertMaterial`, `OrbitControls`
-- **Chance.js** — seeded pseudo-random number generation for deterministic map generation
+- **Delaunator** — Delaunay triangulation (mesh topology for 3D terrain)
+- **Mulberry32** — seeded PRNG for deterministic generation
 - **Vanilla ES modules** — no bundler, served directly via `<script type="module">`
 - **HTML5 import maps** — CDN-based dependency loading
 
@@ -16,144 +17,122 @@ A browser-based 3D terrain generator that combines **Perilous Shores**' procedur
 ```
 index.html
 └── src/
-    ├── 01_prng.js      — seedFromString + chance.js integration
-    ├── 02_noise.js     — Perlin noise (seeded perm-table, 4096-entry smoothstep)
-    │                      + FractalNoise (6 octaves, configurable persistence)
-    ├── 03_grid.js      — Vec2, DCEL primitives, hex grid builder, flood-fill
-    ├── 04_raisers.js   — Skeleton/midpoint-displacement + Poisson-disc
-    │                      + 8 template raisers (island, archipelago, bay, coast,
-    │                      fjord, peninsula, lake, land)
-    ├── 05_terrain.js   — full pipeline: noise → raiser → normalize → water
-    │                      threshold → connected-component islands → biomes → rivers
-    ├── 06_coast.js     — Chaikin corner-cutting smoothing + fractal midpoint displace
-    ├── 07_mesher.js    — hex cells → high-res N×N grid → Three.js BufferGeometry
-    │                      + per-vertex colors + trees (CylinderGeometry) + buildings
-    ├── 08_colors.js    — PS terrain palette (Water, Beach, Wood, Desert, Swamp, Plain,
-    │                      Mountain, River) in 0-1 RGB range
+    ├── 01_prng.js      — seedFromString (legacy, kept for main.js)
+    ├── 02_noise.js     — Perlin + FractalNoise (retained, unused by current pipeline)
+    ├── 03_grid.js      — Vec2, hex grid, DCEL (retained, unused by current pipeline)
+    ├── 04_raisers.js   — Skeleton/midpoint-displacement raisers (retained, unused)
+    ├── 05_terrain.js   — full pipeline: Delaunay mesh → cartoon mountains (parabolic cones
+    │                      + Gaussian ground skirts) → island mask → peaky transform →
+    │                      hydraulic erosion → sea-level cut → sink-fill → coast clean →
+    │                      template-specific features (inverted depressions)
+    ├── 06_coast.js     — Chaikin smoothing (retained, unused by current pipeline)
+    ├── 07_mesher.js    — Delaunay triangles → Three.js indexed BufferGeometry
+    │                      + per-vertex elevation colors (water/beach/grass/forest/mountain/snow)
+    ├── 08_colors.js    — PS terrain palette (legacy, kept for reference)
     ├── 10_renderer.js  — Three.js scene, HemisphereLight + DirectionalLight (shadows),
-    │                      water plane (semi-transparent PlaneGeometry), cloud blobs
-    │                      (IcosahedronGeometry), OrbitControls, render loop with FPS counter
-    ├── 11_ui.js         — progress overlay (STEP x OF 4), "New Island" / "Reset View"
-    │                      buttons, seed display, URL sync
+    │                      water plane (opaque PlaneGeometry 320×320 at Y=0.02, conditional
+    │                      per template), cloud blobs (IcosahedronGeometry), OrbitControls,
+    │                      render loop with FPS counter
+    ├── 11_ui.js         — progress overlay, seed display, URL sync
     └── main.js          — bootstrap: seed → buildRegion → createScene → animate
 ```
 
 ## Terrain Generation Pipeline
 
 ```
-Seed → Hex Grid (DCEL, 55×55)
-     → Fractal Noise (6 octaves, gridSize=32, persistence=0.45)
-     + Template Raiser (per-template height shaping)
-     → Normalize heights [0, 1]
-     → Water threshold (template-dependent: island=0.60, land=-0.15, etc.)
-     → Flood-fill connected-component islands
-     → Mark coastal / mountain / riverside cells
-     → Biome spawning (Wood/Dark/Light/Dead, Desert, Swamp, Plain — flood-fill growth)
-     → River generation (weighted random walk toward coast)
-     → (optional) Chaikin-smoothed coastline for rendering
+Seed → Mulberry32 PRNG → 12000–20000 random points (320×320 km extent)
+     → Delaunator triangulation → adjacency graph
+     → N cartoon mountains (slider: 0–500, default 200)
+         clustered along 2–6 range backbones (per-template configs)
+         each with:
+           - Parabolic cone core  (1.2–5 km radius, sharp peak, compact support)
+           - Gaussian ground skirt (4× core radius, 20% amplitude)
+     → Baseline subtraction (min → 0)
+     → Island mask (smoothstep + angular perturbation, per-template radius/offset)
+     → Normalize [0,1] → sqrt (peaky)
+     → 8× hydraulic erosion (flux + slope → fill sinks)
+     → Sea-level cut (quantile per template)
+     → Fill sinks → clean coast (remove 1-cell artifacts)
+     → Template-specific features (lake basin / fjord trench / bay blob inverted depressions)
+     → Per-vertex heights, indexed mesh, vertex colors by elevation
 ```
 
-### Per-Template Behavior
+### Per-Template Configuration
 
-| Template     | Raiser strategy               | Water level |
-|--------------|-------------------------------|-------------|
-| `island`     | Skeleton: midpoint-displaced bones from center to edges | 0.60 |
-| `archipelago`| Poisson-disc seeded island blobs | 0.55 |
-| `bay`        | Directional ramp (single vector) | 0.50 |
-| `coast`      | Directional ramp (weaker)     | 0.50 |
-| `fjord`      | Skeleton spine + perpendicular incisions | 0.52 |
-| `peninsula`  | Single bone from interior to edge | 0.60 |
-| `lake`       | Radial distance from center (inverted) | 0.55 |
-| `land`       | Flat (no raiser) | -0.15 |
+| Template     | Water quantile | Mountain ranges | Coastline |
+|--------------|---------------|-----------------|-----------|
+| `island`     | 0.40 | 2–4 moderate ranges | Jagged circular island |
+| `archipelago`| 0.55 | 4–6 short narrow ranges | Small broken islands |
+| `bay`        | 0.08 | 1–3 long heavy ranges | Full map, bay indentation on south side |
+| `coast`      | 0.30 | 1–3 long ranges, concentrated | Mostly land, open to south |
+| `fjord`      | 0.06 | 3–5 very narrow ranges | Full map, deep narrow fjord cuts |
+| `peninsula`  | 0.42 | 1–2 central spine ranges | Landmass extends east, water on 3 sides |
+| `lake`       | 0.05 | 2–4 ranges ringing center | Full map, central lake basin |
+| `land`       | 0.00 | 3–6 big continental belts | Full continent, no ocean |
 
-### 3D Mesh Construction (Mixed Approach)
+### 3D Mesh
 
-Rather than rendering the raw hex grid (which looks faceted in 3D), this project *resamples* hex cell data onto a `160×160` regular grid for smooth vertex interpolation:
-
-1. Walk the high-res grid, find the containing hex cell by nearest-center lookup
-2. Assign each vertex a height lifted from the cell's `level` × `15` (world units)
-3. Color each vertex from the cell's biome type
-
-This gives smooth terrain geometry while preserving Perilous Shores' biome-based coloring.
+- Delaunay triangles used directly as geometry (low-poly aesthetic)
+- `flatShading: true` for faceted look
+- Vertex colors mapped by elevation: water → beach → grass → forest → mountain → snow
+- Underwater vertices placed below Y=0; water plane renders at Y=0.02 (island/archipelago/coast/peninsula only)
+- HEIGHT_SCALE = 3.5 km max elevation (vertical exaggeration for readability)
 
 ## Running Locally
 
 No build step — static files served from any HTTP server (ES modules require a server, not `file://`).
 
 ```bash
-# Clone or navigate to the project
 cd perilous3d
-
-# Python
-python3 -m http.server 8000
-
-# Or npm (if you prefer)
-npx serve .
-
-# Open in browser
-open http://localhost:8000
+python -m http.server 8000
+# open http://localhost:8000
 ```
 
 ### URL Parameters
 
-You can share direct links to generated worlds:
-
 ```
-https://0xPaladin.github.io/Outlands/?template=island&seed=ABCD1234
+https://0xPaladin.github.io/Outlands/?template=island&seed=ABCD1234&mountains=200
 ```
 
-| Param    | Values                    | Description                    |
-|----------|---------------------------|--------------------------------|
-| `template` | `island`, `archipelago`, `bay`, `coast`, `fjord`, `peninsula`, `lake`, `land` | Map template |
-| `seed`    | any URL-safe string        | Deterministic map seed         |
+| Param      | Values                    | Description                              |
+|------------|---------------------------|------------------------------------------|
+| `template` | `island`, `archipelago`, `bay`, `coast`, `fjord`, `peninsula`, `lake`, `land` | Map template (affects sea level) |
+| `seed`     | any URL-safe string        | Deterministic map seed                   |
+| `mountains` | 0–500                    | Number of mountain peaks                 |
 
 ## Controls
 
 - **OrbitControls**: left-click rotate, right-click pan, scroll to zoom
-- **"New Island"**: generates a new random seed + map
+- **"New Island"**: generates a new random seed + map (respects mountain slider)
 - **"Reset View"**: snaps camera back to overview
+- **Mountains slider**: real-time value display, applied on next "New Island"
 
 ## Algorithm Notes
 
-**Perlin Noise** — Classic gradient noise implementation matching Perilous Shores' original compiled Haxe/OpenFL output:
-- Seeded permutation table (Fisher-Yates shuffle, 256 entries, doubled to 512 for mod8 fast path)
-- 8 cardinal/intercardinal gradient vectors
-- `6t⁵ − 15t⁴ + 10t³` smoothstep polynomial (4096-entry lookup table)
-- Bilinear interpolation of gradient dot-products
+**PRNG** — Mulberry32 seeded RNG for deterministic generation (embedded in `05_terrain.js`).
 
-**Skeleton Midpoint Displacement** — Used by Island and Fjord templates:
-1. Start with a straight bone from center → edge
-2. Repeatedly subdivide each segment and displace the midpoint perpendicularly
-3. Distance to nearest bone segment controls height via `ridgeSharpness / (d² + rounding)²`
+**Delaunay Triangulation** — [Delaunator](https://github.com/mapbox/delaunator) provides mesh topology from 12K–20K random points across a 320×320 km extent.
 
-**Chaikin Smoothing** — Corner-cutting subdivision for organic coastlines:
-- Each frame: new points at 3/4 of prev + 1/4 of next (and vice versa)
-- Run twice per coastline, applied after midpoint displacement
+**Cartoon Mountains** — Each mountain is a **parabolic cone** (`max(0, 1 − d²/r²)`) giving a sharp peak with no fuzzy tails, plus a wide **Gaussian skirt** at 20% amplitude to raise the surrounding ground. This produces distinct, steep peaks with continuous rolling terrain between them. Radii vary 1.2–5 km per cone. Peaks are **clustered along 2–6 range backbones** (lines defined by center, angle, length, and width). Per-template configurations control range count, length, width, and spatial spread. 15% of peaks are random outliers (foothills and isolated cones).
 
-**Biome Growth** — Flood-fill seeded expansion with edge probability:
-- Forests: ~50% spread, 3 variants (dark/light/dead wood)
-- Desert: prefers low elevation, ~35% spread
-- Swamp: biases toward riverside/coastal cells, ~40% spread
-- Plains: fills remaining land cells
+**Island Mask** — A smoothstep multiplier (`1 − t²(3−2t)`) based on distance from center, with **angular perturbation** (4-frequency sine waves) to create jagged coastlines with bays, headlands, and fjord channels. Per-template configs control base radius, center offset, and perturbation amplitudes. Templates marked "full map" use radius ≥ 1.0× extent so the terrain fills the entire 320×320 km area.
 
-## What's Missing (Compared to Original Perilous Shores)
+**Hydraulic Erosion** — For each vertex: compute downhill direction → collect upstream flux → compute slope → `erosion = √flux × slope + slope²` (capped at 200). 8 iterations with sink-filling between passes to prevent depressions.
 
-Perilous Shores 3D is terrain + 3D visualization only. Perilous Shores proper also has:
-- 2D canvas rendering library (OpenFL)
-- Settlement placement with named towns/cities
-- Road network generation (A* pathfinding)
-- SVG export
-- Name generation (Tracery grammar + word lists)
-- Sound effects (Howler.js)
+**Coast Cleaning** — Two-pass removal of single-cell land/water artifacts on the boundary (3-neighbor triangles).
 
-If you want settlements + roads + names added as 3D models, let me know.
+**Template-Specific Features** — After coast cleaning, certain templates get inverted gaussian depressions pushed below sea level:
+- **Lake**: Broad gaussian basin near the map center (radius 25–50 km, depth 0.25–0.5) creates an inland lake.
+- **Fjord**: Narrow gaussian trough (width 3–8 km, length 70–140 km) running from a random edge inward, with a fade toward the inland end. Creates flooded glacial valleys.
+- **Bay**: Wide gaussian blob (radius 35–65 km) placed near a random map edge. Creates a large bay opening.
+- **Land**: No water plane and heights clamped to ≥ 0, producing a full-continent terrain without ocean.
 
 ## Credits
 
-- **Terrain algorithms**: [Perilous Shores](https://github.com/somewhere/perilous-shores) by watabou — compact hex-based procedural generation with 8 map templates
-- **3D rendering style**: inspired by **Procedural Island** by simsome/Norbet — warm, colorful, low-poly aesthetic
-- **Noise math**: classic Perlin noise implementation
+- **Terrain concept**: inspired by [mewo2/terrain](https://github.com/mewo2/terrain) — Voronoi-based fantasy map generator
+- **Original Perilous Shores**: [watabou](https://github.com/watabou/perilous-shores) — hex-based procedural generation
+- **3D rendering**: inspired by **Procedural Island** by simsome/Norbet
 
 ## License
 
-MIT — do whatever you want with it.
+MIT

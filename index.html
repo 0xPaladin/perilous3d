@@ -9,7 +9,8 @@
 {
   "imports": {
     "three": "https://unpkg.com/three@0.185.0/build/three.module.js",
-    "three/addons/": "https://unpkg.com/three@0.185.0/examples/jsm/"
+    "three/addons/": "https://unpkg.com/three@0.185.0/examples/jsm/",
+    "delaunator": "https://cdn.jsdelivr.net/npm/delaunator@5.0.1/+esm"
   }
 }
 </script>
@@ -17,10 +18,13 @@
 <style>
 body { margin: 0; overflow: hidden; font-family: Arial, sans-serif; }
 #container { width: 100vw; height: 100vh; position: relative; }
-#ui { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 10; text-align: center; }
+#ui { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 10; text-align: center; white-space: nowrap; }
 #template-select { font-size: 14px; padding: 6px; margin-right: 8px; }
 .insel_button { display: inline-block; border: 1px solid #666; padding: 6px 14px; background: rgba(255,255,255,0.6); cursor: pointer; font-size: 15px; margin: 0 4px; }
 .insel_button:hover { background: #000; color: #fff; }
+#mountains-container { display: inline-block; margin: 0 8px; vertical-align: middle; }
+#mountains-container label { font-size: 13px; color: #fff; background: rgba(0,0,0,0.4); padding: 3px 8px; border-radius: 4px; }
+#mountains-slider { width: 80px; vertical-align: middle; }
 #progress-panel { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(255,255,255,0.85); padding: 25px 40px; border-radius: 12px; text-align: center; z-index: 20; display: none; }
 #progress-title { font-size: 20px; margin: 0 0 6px; }
 #progress-step { font-size: 14px; color: #444; margin: 0 0 12px; }
@@ -49,6 +53,10 @@ body { margin: 0; overflow: hidden; font-family: Arial, sans-serif; }
     <option value="lake">Lake</option>
     <option value="land">Land</option>
   </select>
+  <div id="mountains-container">
+    <label>Mountains: <span id="mountains-value">200</span></label>
+    <input type="range" id="mountains-slider" min="0" max="500" value="200">
+  </div>
   <div class="insel_button" id="btn-new">New Island</div>
   <div class="insel_button" id="btn-lost">Reset View</div>
 </div>

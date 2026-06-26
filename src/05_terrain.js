@@ -1,216 +1,497 @@
-// Full terrain generation pipeline for Perilous Shores.
-// Steps: fractal noise → raiser → normalize → water threshold → islands → biomes → rivers
-//
-// Outputs a Region object with:
-//   region.faces:   array of Cell data objects (center, poly, land, level, terrain...)
-//   region.cols/rows: grid dimensions
-//   region.islands: connected-component island objects
-//   region.template / region.seed / region.waterLevel
+import Delaunator from 'delaunator';
 
-import { FractalNoise } from './02_noise.js';
-import { getRaiser } from './04_raisers.js';
-import { Vec2, buildHexGrid, floodFill } from './03_grid.js';
-import { TERRAIN } from './08_colors.js';
-
-// ---- Water level thresholds per template (reconstructed from PS) ----
-const WATER_LEVELS = {
-  island: 0.60, archipelago: 0.55, bay: 0.50, coast: 0.50,
-  fjord: 0.52, peninsula: 0.60, lake: 0.55, land: -0.15
-};
-const LOWLAND_AREA = 0.60;
-
-export function buildRegion(template, cols, rows, seed) {
-  const step = (name) => {
-    console.log(`[terrain] ${name}`);
+function createRng(seed) {
+  let s = seed | 0;
+  return function() {
+    s = s + 0x6D2B79F5 | 0;
+    let t = Math.imul(s ^ s >>> 15, 1 | s);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
   };
-
-  // 1. Build hexagonal grid (flat-top)
-  step('build hex grid');
-  const { faces: rawFaces, vertices, edges } = buildHexGrid(cols, rows, 0, 0);
-
-  // 2. Create fractal noise (6 octaves, PS-matched params)
-  step('create noise');
-  const noise = new FractalNoise(6, 32, 0.45, seed % 99999);
-  const raiser = getRaiser(template, cols, rows, seed);
-
-  // 3. Compute raw height for each cell
-  step('compute heights');
-  for (const face of rawFaces) {
-    const d = face.data.center;
-    const base = noise.get(d.x, d.y);             // [-1, 1]
-    const raised = raiser.raise(d);               // raiser-specific range
-    face.data.rawHeight = base * 0.65 + raised * 0.75;
-    face.data.rawHeight = Math.max(0, Math.min(1, (face.data.rawHeight + 0.5) / 1.5));
-  }
-
-  // 4. Normalize heights across all cells
-  let minH = Infinity, maxH = -Infinity;
-  for (const f of rawFaces) {
-    if (f.data.rawHeight < minH) minH = f.data.rawHeight;
-    if (f.data.rawHeight > maxH) maxH = f.data.rawHeight;
-  }
-  const rangeH = maxH - minH || 1;
-  for (const f of rawFaces) {
-    f.data.level = (f.data.rawHeight - minH) / rangeH;
-  }
-
-  // 5. Apply water threshold
-  const waterLevel = WATER_LEVELS[template] || 0.5;
-  for (const f of rawFaces) {
-    f.data.land = f.data.level > waterLevel;
-    f.data.aboveSea = 1 - Math.max(0, (f.data.level - waterLevel)) / Math.max(0.01, 1 - waterLevel);
-  }
-
-  // 6. Mark border cells
-  for (const f of rawFaces) {
-    if (f.data.col === 0 || f.data.col === cols - 1 || f.data.row === 0 || f.data.row === rows - 1) {
-      f.data.border = true;
-    }
-  }
-
-  // 7. Connected-component island detection
-  const visited = new Set();
-  const islands = [];
-  for (const f of rawFaces) {
-    if (f.data.land && !visited.has(f.index)) {
-      const regionCells = floodFill(f, cell => cell.data.land, visited);
-      const island = {
-        index: islands.length,
-        faces: regionCells,
-        outline: null,
-      };
-      for (const c of regionCells) c.data.island = island;
-      islands.push(island);
-    }
-  }
-
-  // 8. Mark coastal cells
-  for (const f of rawFaces) {
-    if (f.data.land) {
-      f.data.coastal = f.data._neighbors.some(n => !n.data.land);
-    }
-  }
-
-  // 9. Mountain assignment (flood-fill high-elevation cells)
-  const mountainCandidates = rawFaces.filter(f => f.data.land && f.data.aboveSea > LOWLAND_AREA);
-  const visitedMtn = new Set();
-  const mountains = [];
-  for (const candidate of mountainCandidates) {
-    if (visitedMtn.has(candidate.index)) continue;
-    const cluster = floodFill(candidate, f => f.data.land && f.data.aboveSea > LOWLAND_AREA, visitedMtn);
-    if (cluster.length > 3) {
-      mountains.push(cluster);
-      for (const c of cluster) c.data.mountain = true;
-    }
-  }
-
-  // 10. Spawn biome terrain types
-  step('spawn biomes');
-  spawnBiomes(rawFaces, template);
-
-  // 11. River generation
-  step('generate rivers');
-  generateRivers(rawFaces, seed);
-
-  return { faces: rawFaces, vertices, edges, cols, rows, islands, template, seed, waterLevel };
 }
 
-// ---- Biome spawning: flood-fill growth from seed positions ----
-function spawnBiomes(faces, template) {
-  const landFaces = faces.filter(f => f.data.land && !f.data.border);
-  if (!landFaces.length) return;
+function runif(lo, hi, rng) { return lo + rng() * (hi - lo); }
 
-  const nSeeds = Math.min(Math.floor(landFaces.length * 0.04), 20);
-
-  // Wood seeds
-  const woodSeeds = [];
-  const desertSeeds = [];
-  for (let i = 0; i < nSeeds; i++) {
-    const cell = landFaces[Math.floor(Math.random() * landFaces.length)];
-    if (Math.random() < 0.7) woodSeeds.push(cell);
-    else desertSeeds.push(cell);
-  }
-
-  for (const seed of woodSeeds) {
-    const type = Math.random() < 0.33 ? TERRAIN.WOOD_DARK : (Math.random() < 0.5 ? TERRAIN.WOOD_LIGHT : TERRAIN.WOOD_DEAD);
-    growBiome(seed, 0.5, f => !f.data.terrain && f.data.land && !f.data.mountain && !f.data.riverside, type);
-  }
-
-  for (const seed of desertSeeds) {
-    if (seed.data.aboveSea < 0.6) {
-      growBiome(seed, 0.35, f => !f.data.terrain && f.data.land && !f.data.mountain && f.data.level < 0.6, TERRAIN.DESERT);
-    }
-  }
-
-  // Swamp near riversides / coasts
-  const swampSeeds = faces.filter(f => f.data.land && (f.data.riverside || f.data.coastal)).slice(0, 10);
-  for (const seed of swampSeeds) {
-    if (!seed.data.terrain) {
-      growBiome(seed, 0.4, f => !f.data.terrain && f.data.land && !f.data.mountain, TERRAIN.SWAMP);
-    }
-  }
-
-  // Plains fill
-  for (const f of landFaces) {
-    if (!f.data.terrain && !f.data.mountain) f.data.terrain = TERRAIN.PLAIN;
-  }
+function rnormFactory(rng) {
+  let z2 = null;
+  return function() {
+    if (z2 !== null) { const t = z2; z2 = null; return t; }
+    let x1, x2, w = 2;
+    while (w >= 1) { x1 = runif(-1, 1, rng); x2 = runif(-1, 1, rng); w = x1 * x1 + x2 * x2; }
+    w = Math.sqrt(-2 * Math.log(w) / w);
+    z2 = x2 * w;
+    return x1 * w;
+  };
 }
 
-function growBiome(seed, probability, canGrow, type) {
-  const queue = [seed];
-  const visited = new Set([seed.index]);
-  seed.data.terrain = type;
-  while (queue.length) {
-    const cur = queue.shift();
-    for (const n of cur.data._neighbors) {
-      if (visited.has(n.index)) continue;
-      if (!canGrow(n)) continue;
-      if (Math.random() < probability) {
-        n.data.terrain = type;
-        visited.add(n.index);
-        queue.push(n);
+function randomVector(scale, rng) {
+  const n = rnormFactory(rng);
+  return [scale * n(), scale * n()];
+}
+
+function generatePoints(n, extent, rng) {
+  const pts = [];
+  for (let i = 0; i < n; i++) {
+    pts.push([runif(-extent.width / 2, extent.width / 2, rng), runif(-extent.height / 2, extent.height / 2, rng)]);
+  }
+  return pts;
+}
+
+function buildAdjacency(delaunay, n) {
+  const { triangles, halfedges } = delaunay;
+  const adj = Array.from({ length: n }, () => []);
+  const seen = Array.from({ length: n }, () => new Set());
+  for (let i = 0; i < triangles.length; i++) {
+    const a = triangles[i];
+    const b = triangles[(i % 3 === 2) ? i - 2 : i + 1];
+    if (!seen[a].has(b)) { seen[a].add(b); adj[a].push(b); }
+    if (!seen[b].has(a)) { seen[b].add(a); adj[b].push(a); }
+  }
+  return adj;
+}
+
+function zero(n) {
+  const z = new Float64Array(n);
+  return z;
+}
+
+function quantile(arr, q) {
+  const s = new Float64Array(arr);
+  s.sort();
+  const idx = q * (s.length - 1);
+  const lo = Math.floor(idx);
+  const hi = Math.ceil(idx);
+  return s[lo] + (idx - lo) * (s[hi] - s[lo]);
+}
+
+function slope(pts, direction) {
+  const h = zero(pts.length);
+  for (let i = 0; i < pts.length; i++) h[i] = pts[i][0] * direction[0] + pts[i][1] * direction[1];
+  return h;
+}
+
+function cone(pts, slopeVal) {
+  const h = zero(pts.length);
+  for (let i = 0; i < pts.length; i++) h[i] = Math.sqrt(pts[i][0] * pts[i][0] + pts[i][1] * pts[i][1]) * slopeVal;
+  return h;
+}
+
+function mountains(pts, extent, n, rng, template) {
+  const configs = {
+    island:      { ranges: [2, 4], len: [40, 130], width: [4, 18],  outlier: 0.15, spread: 0.25 },
+    archipelago: { ranges: [4, 6], len: [15, 60],  width: [2, 8],   outlier: 0.10, spread: 0.35 },
+    bay:         { ranges: [1, 3], len: [50, 140], width: [6, 20],  outlier: 0.10, spread: 0.20 },
+    coast:       { ranges: [1, 3], len: [60, 160], width: [5, 15],  outlier: 0.10, spread: 0.15 },
+    fjord:       { ranges: [3, 5], len: [40, 100], width: [2, 6],   outlier: 0.08, spread: 0.20 },
+    peninsula:   { ranges: [1, 2], len: [60, 150], width: [3, 10],  outlier: 0.10, spread: 0.15 },
+    lake:        { ranges: [2, 4], len: [40, 120], width: [4, 14],  outlier: 0.10, spread: 0.25 },
+    land:        { ranges: [3, 6], len: [80, 200], width: [8, 28],  outlier: 0.20, spread: 0.35 },
+  };
+  const c = configs[template] || configs.island;
+
+  const numRanges = c.ranges[0] + Math.floor(rng() * (c.ranges[1] - c.ranges[0] + 1));
+  const ranges = [];
+  for (let r = 0; r < numRanges; r++) {
+    const cx = runif(-extent.width * c.spread, extent.width * c.spread, rng);
+    const cy = runif(-extent.height * c.spread, extent.height * c.spread, rng);
+    const angle = runif(0, Math.PI * 2, rng);
+    const len = runif(c.len[0], c.len[1], rng);
+    const width = runif(c.width[0], c.width[1], rng);
+    ranges.push({ x: cx, y: cy, angle, len, width });
+  }
+
+  // ---- Place mountains along ranges ----
+  const outlierFrac = c.outlier;
+  const mounts = [];
+  for (let i = 0; i < n; i++) {
+    let mx, my, sizeFactor;
+
+    if (rng() < outlierFrac) {
+      mx = runif(-extent.width * 0.44, extent.width * 0.44, rng);
+      my = runif(-extent.height * 0.44, extent.height * 0.44, rng);
+      sizeFactor = runif(0.2, 0.6, rng);
+    } else {
+      const range = ranges[Math.floor(rng() * ranges.length)];
+      const t = (rng() + rng()) * 0.5;
+      const along = (t - 0.5) * range.len;
+      const perp = (rng() + rng() - 1) * range.width * 0.7;
+
+      const cosA = Math.cos(range.angle);
+      const sinA = Math.sin(range.angle);
+      mx = range.x + along * cosA - perp * sinA;
+      my = range.y + along * sinA + perp * cosA;
+
+      const centerProx = 1 - Math.abs(t - 0.5) * 2;
+      const spineProx = 1 - Math.abs(perp) / (range.width * 0.7 + 1);
+      sizeFactor = 0.3 + (centerProx * 0.5 + spineProx * 0.5) * 0.7;
+    }
+
+    const margin = extent.width * 0.44;
+    mx = Math.max(-margin, Math.min(margin, mx));
+    my = Math.max(-margin, Math.min(margin, my));
+
+    const r = runif(1.2, 2.0 + sizeFactor * 4, rng);
+    mounts.push({ x: mx, y: my, r });
+  }
+
+  // ---- Accumulate heights (cone + skirt, unchanged) ----
+  const h = zero(pts.length);
+  for (let i = 0; i < pts.length; i++) {
+    const p = pts[i];
+    let sum = 0;
+    for (let j = 0; j < n; j++) {
+      const m = mounts[j];
+      const d2 = (p[0] - m.x) * (p[0] - m.x) + (p[1] - m.y) * (p[1] - m.y);
+      const peak = Math.max(0, 1 - d2 / (m.r * m.r));
+      const skirt = Math.exp(-d2 / (2 * (m.r * 4) * (m.r * 4))) * 0.2;
+      sum += peak + skirt;
+    }
+    h[i] = sum;
+  }
+  return h;
+}
+
+function extentForPoints(pts) {
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (const p of pts) {
+    if (p[0] < minX) minX = p[0];
+    if (p[0] > maxX) maxX = p[0];
+    if (p[1] < minY) minY = p[1];
+    if (p[1] > maxY) maxY = p[1];
+  }
+  return { width: maxX - minX, height: maxY - minY };
+}
+
+function isEdge(adj, i) {
+  return adj[i].length < 3;
+}
+
+function isNearEdge(pt, extent) {
+  const x = pt[0], y = pt[1];
+  const hw = extent.width / 2, hh = extent.height / 2;
+  return x < -0.45 * hw || x > 0.45 * hw || y < -0.45 * hh || y > 0.45 * hh;
+}
+
+function relax(h, adj) {
+  const nh = zero(h.length);
+  for (let i = 0; i < h.length; i++) {
+    const nbs = adj[i];
+    if (nbs.length < 3) { nh[i] = 0; continue; }
+    let s = 0;
+    for (const j of nbs) s += h[j];
+    nh[i] = s / nbs.length;
+  }
+  return nh;
+}
+
+function add(base) {
+  const n = base.length;
+  const result = zero(n);
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j < arguments.length; j++) result[i] += arguments[j][i];
+  }
+  return result;
+}
+
+function normalize(h) {
+  let lo = Infinity, hi = -Infinity;
+  for (let i = 0; i < h.length; i++) {
+    if (h[i] < lo) lo = h[i];
+    if (h[i] > hi) hi = h[i];
+  }
+  const r = hi - lo || 1;
+  const nh = zero(h.length);
+  for (let i = 0; i < h.length; i++) nh[i] = (h[i] - lo) / r;
+  return nh;
+}
+
+function peaky(h) {
+  const n = normalize(h);
+  for (let i = 0; i < n.length; i++) n[i] = Math.sqrt(n[i]);
+  return n;
+}
+
+function neighbours(adj, i) {
+  return adj[i];
+}
+
+function distance(pts, i, j) {
+  const dx = pts[i][0] - pts[j][0];
+  const dy = pts[i][1] - pts[j][1];
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
+function downhill(h, adj) {
+  const dh = new Int32Array(h.length);
+  for (let i = 0; i < h.length; i++) {
+    if (isEdge(adj, i)) { dh[i] = -2; continue; }
+    let best = -1;
+    let bestH = h[i];
+    for (const j of adj[i]) {
+      if (h[j] < bestH) { bestH = h[j]; best = j; }
+    }
+    dh[i] = best;
+  }
+  return dh;
+}
+
+function getFlux(h, adj) {
+  const dh = downhill(h, adj);
+  const n = h.length;
+  const flux = new Float64Array(n);
+  const idxs = new Uint32Array(n);
+  for (let i = 0; i < n; i++) { idxs[i] = i; flux[i] = 1 / n; }
+  idxs.sort((a, b) => h[b] - h[a]);
+  for (let i = 0; i < n; i++) {
+    const j = idxs[i];
+    if (dh[j] >= 0) flux[dh[j]] += flux[j];
+  }
+  return flux;
+}
+
+function getSlope(h, adj, pts) {
+  const dh = downhill(h, adj);
+  const slopeArr = zero(h.length);
+  for (let i = 0; i < h.length; i++) {
+    if (dh[i] < 0) { slopeArr[i] = 0; continue; }
+    slopeArr[i] = (h[i] - h[dh[i]]) / distance(pts, i, dh[i]);
+  }
+  return slopeArr;
+}
+
+function erosionRate(h, adj, pts) {
+  const flux = getFlux(h, adj);
+  const slopeArr = getSlope(h, adj, pts);
+  const rate = zero(h.length);
+  for (let i = 0; i < h.length; i++) {
+    const river = Math.sqrt(flux[i]) * slopeArr[i];
+    const creep = slopeArr[i] * slopeArr[i];
+    let total = 1000 * river + creep;
+    if (total > 200) total = 200;
+    rate[i] = total;
+  }
+  return rate;
+}
+
+function erode(h, amount, adj, pts) {
+  const rate = erosionRate(h, adj, pts);
+  let maxR = 0;
+  for (let i = 0; i < rate.length; i++) if (rate[i] > maxR) maxR = rate[i];
+  if (maxR === 0) maxR = 1;
+  const nh = zero(h.length);
+  for (let i = 0; i < h.length; i++) nh[i] = h[i] - amount * (rate[i] / maxR);
+  return nh;
+}
+
+function fillSinks(h, adj, pts, extent, epsilon) {
+  epsilon = epsilon || 1e-5;
+  const infinity = 999999;
+  const nh = zero(h.length);
+  for (let i = 0; i < h.length; i++) {
+    if (isNearEdge(pts[i], extent)) {
+      nh[i] = h[i];
+    } else {
+      nh[i] = infinity;
+    }
+  }
+  while (true) {
+    let changed = false;
+    for (let i = 0; i < h.length; i++) {
+      if (nh[i] === h[i]) continue;
+      const nbs = adj[i];
+      for (let j = 0; j < nbs.length; j++) {
+        const k = nbs[j];
+        if (h[i] >= nh[k] + epsilon) {
+          nh[i] = h[i];
+          changed = true;
+          break;
+        }
+        const oh = nh[k] + epsilon;
+        if (nh[i] > oh && oh > h[i]) {
+          nh[i] = oh;
+          changed = true;
+        }
       }
     }
+    if (!changed) return nh;
   }
 }
 
-// ---- River generation (weighted random walk toward coast) ----
-function generateRivers(faces, seed) {
-  const numRivers = 3 + ((seed >>> 0) % 5);
-  const landFaces = faces.filter(f => f.data.land && !f.data.border && f.data.aboveSea > 0.2);
+function setSeaLevel(h, q) {
+  const delta = quantile(h, q);
+  const nh = zero(h.length);
+  for (let i = 0; i < h.length; i++) nh[i] = h[i] - delta;
+  return nh;
+}
 
-  for (let r = 0; r < numRivers; r++) {
-    const start = landFaces[Math.floor(Math.random() * landFaces.length)];
-    if (!start) continue;
-
-    const path = [start];
-    const riverSet = new Set([start.index]);
-    start.data.riverside = true;
-    let current = start;
-    const maxLen = 18 + Math.floor(Math.random() * 35);
-
-    // Pre-compute sorted neighbors helper
-    const scoredNeighbors = (cell) => {
-      const candidates = cell.data._neighbors.filter(n => !riverSet.has(n.index));
-      return candidates.map(n => {
-        const hScore = n.data.level;
-        const waterScore = (!n.data.land || n.data.coastal) ? 3 : 0;
-        return { n, score: hScore * 0.55 + waterScore * 0.35 + Math.random() * 0.2 };
-      }).sort((a, b) => a.score - b.score);
-    };
-
-    for (let s = 0; s < maxLen; s++) {
-      const sn = scoredNeighbors(current);
-      if (!sn.length) break;
-      current = sn[0].n;
-      if (!current.data.land) {
-        current.data.terrain = TERRAIN.RIVER;
-      } else {
-        current.data.riverside = true;
+function cleanCoast(h, adj, pts, iters) {
+  let result = new Float64Array(h);
+  for (let iter = 0; iter < iters; iter++) {
+    let changed = 0;
+    const nh1 = new Float64Array(result);
+    for (let i = 0; i < result.length; i++) {
+      const nbs = adj[i];
+      if (result[i] <= 0 || nbs.length !== 3) continue;
+      let count = 0;
+      let best = -999999;
+      for (const j of nbs) {
+        if (result[j] > 0) count++;
+        else if (result[j] > best) best = result[j];
       }
-      riverSet.add(current.index);
-      path.push(current);
-      if (!current.data.land) break;
+      if (count > 1) continue;
+      nh1[i] = best / 2;
+    }
+    result = nh1;
+    const nh2 = new Float64Array(result);
+    for (let i = 0; i < result.length; i++) {
+      const nbs = adj[i];
+      if (result[i] > 0 || nbs.length !== 3) continue;
+      let count = 0;
+      let best = 999999;
+      for (const j of nbs) {
+        if (result[j] <= 0) count++;
+        else if (result[j] < best) best = result[j];
+      }
+      if (count > 1) continue;
+      nh2[i] = best / 2;
+    }
+    result = nh2;
+  }
+  return result;
+}
+
+function doErosion(h, amount, n, adj, pts, extent) {
+  let result = fillSinks(h, adj, pts, extent);
+  for (let i = 0; i < n; i++) {
+    result = erode(result, amount, adj, pts);
+    result = fillSinks(result, adj, pts, extent);
+  }
+  return result;
+}
+
+export function buildRegion(template, cols, rows, seed, mountainCount) {
+  const rng = createRng(seed);
+  const extent = { width: 320, height: 320 };
+  const npts = 12000 + Math.floor(rng() * 8000);
+
+  const pts = generatePoints(npts, extent, rng);
+
+  const flat = new Float64Array(npts * 2);
+  for (let i = 0; i < npts; i++) { flat[i * 2] = pts[i][0]; flat[i * 2 + 1] = pts[i][1]; }
+  const del = new Delaunator(flat);
+  const adj = buildAdjacency(del, npts);
+
+  const nm = mountainCount != null ? mountainCount : 80;
+  let h = mountains(pts, extent, nm, rng, template);
+
+  // Subtract baseline so valleys start at 0
+  let hMin = Infinity;
+  for (let i = 0; i < h.length; i++) if (h[i] < hMin) hMin = h[i];
+  for (let i = 0; i < pts.length; i++) h[i] -= hMin;
+
+  // Island mask: mountains keep their shape, just fade at edges.
+  // Angular perturbation breaks the circular outline into jagged bays and headlands.
+  const maskConfigs = {
+    island:      { radius: 0.48, offX: 0,    offY: 0,     amp: [0.22, 0.14, 0.08, 0.04] },
+    archipelago: { radius: 0.32, offX: 0,    offY: 0,     amp: [0.30, 0.18, 0.10, 0.05] },
+    bay:         { radius: 1.00, offX: 0,    offY: -0.25, amp: [0.15, 0.10, 0.05, 0.02] },
+    coast:       { radius: 0.52, offX: 0,    offY: -0.22, amp: [0.12, 0.08, 0.04, 0.02] },
+    fjord:       { radius: 1.00, offX: 0,    offY: 0,     amp: [0.10, 0.18, 0.22, 0.14] },
+    peninsula:   { radius: 0.55, offX: 0.22, offY: 0,     amp: [0.18, 0.10, 0.05, 0.02] },
+    lake:        { radius: 1.20, offX: 0,    offY: 0,     amp: [0.10, 0.06, 0.03, 0.01] },
+    land:        { radius: 2.00, offX: 0,    offY: 0,     amp: [0.00, 0.00, 0.00, 0.00] },
+  };
+  const mc = maskConfigs[template] || maskConfigs.island;
+  const baseR = extent.width * mc.radius;
+  for (let i = 0; i < pts.length; i++) {
+    const x = pts[i][0] - mc.offX * extent.width;
+    const y = pts[i][1] - mc.offY * extent.height;
+    const d = Math.sqrt(x * x + y * y);
+    const angle = Math.atan2(y, x);
+    const a = mc.amp;
+    const perturb = a[0] * Math.sin(angle * 2 + 0.5)
+                  + a[1] * Math.sin(angle * 5 + 1.3)
+                  + a[2] * Math.sin(angle * 11 + 2.7)
+                  + a[3] * Math.sin(angle * 23 + 4.1);
+    const effectiveR = baseR * (1 + perturb);
+    const t = d / effectiveR;
+    const mask = 1 - t * t * (3 - 2 * t);
+    h[i] *= Math.max(0, mask);
+  }
+
+  // No relaxation � sharp peaks
+  h = normalize(h);
+  h = peaky(h);
+  h = doErosion(h, runif(0.02, 0.12, rng), 8, adj, pts, extent);
+
+  const waterQuantile = { island: 0.40, archipelago: 0.55, bay: 0.08, coast: 0.30, fjord: 0.06, peninsula: 0.42, lake: 0.05, land: 0.00 };
+  const wq = waterQuantile[template] || 0.35;
+  h = setSeaLevel(h, wq);
+  h = fillSinks(h, adj, pts, extent);
+  h = cleanCoast(h, adj, pts, 3);
+
+  // ---- Template-specific terrain features (inverted depressions) ----
+  if (template === 'lake') {
+    const cx = runif(-15, 15, rng), cy = runif(-15, 15, rng);
+    const r = runif(25, 50, rng);
+    const depth = runif(0.25, 0.5, rng);
+    for (let i = 0; i < pts.length; i++) {
+      const d2 = (pts[i][0] - cx) ** 2 + (pts[i][1] - cy) ** 2;
+      h[i] -= Math.exp(-d2 / (2 * r * r)) * depth;
+    }
+  } else if (template === 'fjord') {
+    const edge = Math.floor(rng() * 4);
+    const edgeOff = runif(-50, 50, rng), angVar = runif(-0.3, 0.3, rng);
+    let sx, sy, angle;
+    if (edge === 0) { sx = edgeOff; sy = 155; angle = -Math.PI / 2 + angVar; }
+    else if (edge === 1) { sx = 155; sy = edgeOff; angle = Math.PI + angVar; }
+    else if (edge === 2) { sx = edgeOff; sy = -155; angle = Math.PI / 2 + angVar; }
+    else { sx = -155; sy = edgeOff; angle = angVar; }
+    const len = runif(70, 140, rng);
+    const width = runif(3, 8, rng);
+    const depth = runif(0.2, 0.5, rng);
+    for (let i = 0; i < pts.length; i++) {
+      const dx = pts[i][0] - sx, dy = pts[i][1] - sy;
+      const along = dx * Math.cos(angle) + dy * Math.sin(angle);
+      if (along > 5 || along < -(len + 10)) continue;
+      const perp = -dx * Math.sin(angle) + dy * Math.cos(angle);
+      const fade = Math.min(1, (along + len + 10) / (len * 0.2 + 1));
+      const d2 = perp * perp;
+      h[i] -= Math.exp(-d2 / (2 * width * width)) * depth * fade;
+    }
+  } else if (template === 'bay') {
+    const edge = Math.floor(rng() * 4);
+    let cx, cy;
+    if (edge === 0) { cx = runif(-30, 30, rng); cy = 120; }
+    else if (edge === 1) { cx = 120; cy = runif(-30, 30, rng); }
+    else if (edge === 2) { cx = runif(-30, 30, rng); cy = -120; }
+    else { cx = -120; cy = runif(-30, 30, rng); }
+    const r = runif(35, 65, rng);
+    const depth = runif(0.2, 0.4, rng);
+    for (let i = 0; i < pts.length; i++) {
+      const d2 = (pts[i][0] - cx) ** 2 + (pts[i][1] - cy) ** 2;
+      h[i] -= Math.exp(-d2 / (2 * r * r)) * depth;
     }
   }
+
+  const waterLevel = 0;
+  const heightMin = Math.min(...h);
+  const heightMax = Math.max(...h);
+  const heightRange = heightMax - heightMin || 1;
+
+  return {
+    pts,
+    triangles: del.triangles,
+    halfedges: del.halfedges,
+    adj,
+    heights: Array.from(h),
+    heightMin,
+    heightMax,
+    heightRange,
+    extent,
+    waterLevel,
+    template,
+    seed,
+    mountainCount: nm
+  };
 }

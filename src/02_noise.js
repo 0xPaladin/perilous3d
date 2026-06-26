@@ -73,10 +73,10 @@ export class Perlin {
     const a = this.permMod8[X] + Y;
     const b = this.permMod8[X + 1] + Y;
 
-    const g00 = this.perm[a];
-    const g10 = this.perm[b];
-    const g01 = this.perm[a + 1];
-    const g11 = this.perm[b + 1];
+    const g00 = this.permMod8[a];
+    const g10 = this.permMod8[b];
+    const g01 = this.permMod8[a + 1];
+    const g11 = this.permMod8[b + 1];
 
     const l00 = this.dot(g00, x, y);
     const l10 = this.dot(g10, x - 1, y);

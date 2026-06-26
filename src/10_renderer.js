@@ -3,20 +3,18 @@
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import * as COLORS from './08_colors.js';
-import { TERRAIN } from './08_colors.js';
+
 
 export function createScene(canvas, region) {
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x36dbd6); // sky top (matching PS subtle gradient would need shader)
-  scene.fog = new THREE.FogExp2(0x36dbd6, 0.004);
 
-  const camera = new THREE.PerspectiveCamera(70, canvas.width / canvas.height, 0.1, 500);
-  camera.position.set(0, 12, 20);
+  const camera = new THREE.PerspectiveCamera(60, canvas.clientWidth / canvas.clientHeight, 0.1, 2000);
+  camera.position.set(0, 120, 260);
 
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
   renderer.setPixelRatio(window.devicePixelRatio);
-  renderer.setSize(canvas.width, canvas.height);
+  renderer.setSize(canvas.clientWidth, canvas.clientHeight);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFShadowMap;
   canvas.appendChild(renderer.domElement);
@@ -26,21 +24,21 @@ export function createScene(canvas, region) {
   controls.enableDamping = true;
   controls.dampingFactor = 0.08;
   controls.maxPolarAngle = Math.PI / 2.05;
-  controls.minDistance = 3;
-  controls.maxDistance = 60;
+  controls.minDistance = 10;
+  controls.maxDistance = 800;
 
   // ---- Lights ----
   const ambient = new THREE.HemisphereLight(0x87ceeb, 0x556b2f, 0.7);
   scene.add(ambient);
 
   const sun = new THREE.DirectionalLight(0xfff5e6, 1.8);
-  sun.position.set(30, 40, 20);
+  sun.position.set(200, 300, 150);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
-  sun.shadow.camera.left = -30;
-  sun.shadow.camera.right = 30;
-  sun.shadow.camera.top = 30;
-  sun.shadow.camera.bottom = -30;
+  sun.shadow.camera.left = -200;
+  sun.shadow.camera.right = 200;
+  sun.shadow.camera.top = 200;
+  sun.shadow.camera.bottom = -200;
   scene.add(sun);
 
   // ---- Terrain mesh ----
@@ -54,19 +52,20 @@ export function createScene(canvas, region) {
   });
 
   // ---- Water plane ----
-  const waterGeom = new THREE.PlaneGeometry(100, 100);
+  const waterGeom = new THREE.PlaneGeometry(320, 320);
   const waterMat = new THREE.MeshPhongMaterial({
     color: 0x6092c1,
-    transparent: true,
-    opacity: 0.82,
     shininess: 80,
     side: THREE.DoubleSide,
+    polygonOffset: true,
+    polygonOffsetFactor: -0.5,
+    polygonOffsetUnits: -1,
   });
   const water = new THREE.Mesh(waterGeom, waterMat);
   water.rotation.x = -Math.PI / 2;
-  water.position.y = region.waterLevel * 15;
+  water.position.y = 0.02;
   water.receiveShadow = true;
-  scene.add(water);
+  if (!['land', 'lake', 'fjord', 'bay'].includes(region.template)) scene.add(water);
 
   // ---- Clouds (IcosahedronGeometry merged blobs, from proceduralisland) ----
   const cloudGroup = new THREE.Group();
@@ -95,14 +94,22 @@ export function createScene(canvas, region) {
       cloud.add(blob);
     }
     cloud.position.set(
-      (Math.random() - 0.5) * 40,
-      6 + Math.random() * 4,
-      (Math.random() - 0.5) * 40
+      (Math.random() - 0.5) * 500,
+      3 + Math.random() * 3,
+      (Math.random() - 0.5) * 500
     );
-    cloud.scale.setScalar(1.2 + Math.random() * 2.0);
+    cloud.scale.setScalar(10 + Math.random() * 20);
     cloudGroup.add(cloud);
   }
   scene.add(cloudGroup);
+
+  window.addEventListener('resize', () => {
+    const w = canvas.clientWidth;
+    const h = canvas.clientHeight;
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+    renderer.setSize(w, h);
+  });
 
   return { scene, camera, renderer, controls, water };
 }
@@ -121,8 +128,8 @@ export function animate({ scene, camera, renderer, controls }) {
     scene.traverse(obj => {
       if (obj.name === 'clouds') {
         obj.children.forEach(c => {
-          c.position.x += dt * 0.15;
-          if (c.position.x > 35) c.position.x = -35;
+          c.position.x += dt * 2;
+          if (c.position.x > 350) c.position.x = -350;
         });
       }
     });
@@ -140,14 +147,5 @@ export function animate({ scene, camera, renderer, controls }) {
   step();
 }
 
-export function resetView(camera, controls, region) {
-  if (!region) return;
-  let maxH = 0;
-  for (const f of region.faces) {
-    if (f.data.level > maxH) maxH = f.data.level;
-  }
-  const dist = Math.max(15, maxH * 25);
-  camera.position.set(0, dist * 0.5, dist);
-  controls.target.set(0, 0, 0);
-  controls.update();
-}
+
+
