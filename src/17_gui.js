@@ -30,7 +30,7 @@ export function initGUI({ app, generate, initialTemplate, initialMountains, init
   };
 
   const templateFolder = gui.addFolder('Template');
-  templateFolder.add(options, 'template', ['island', 'archipelago', 'bay', 'coast', 'fjord', 'peninsula', 'lake', 'land'])
+  templateFolder.add(options, 'template', ['island', 'archipelago', 'bay', 'fjord', 'peninsula', 'lake', 'land'])
     .name('Template');
 
   const paramsFolder = gui.addFolder('Parameters');

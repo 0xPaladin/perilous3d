@@ -2,7 +2,7 @@ import Delaunator from 'delaunator';
 
 function createRng(seed) {
   let s = seed | 0;
-  return function() {
+  return function () {
     s = s + 0x6D2B79F5 | 0;
     let t = Math.imul(s ^ s >>> 15, 1 | s);
     t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
@@ -14,7 +14,7 @@ function runif(lo, hi, rng) { return lo + rng() * (hi - lo); }
 
 function rnormFactory(rng) {
   let z2 = null;
-  return function() {
+  return function () {
     if (z2 !== null) { const t = z2; z2 = null; return t; }
     let x1, x2, w = 2;
     while (w >= 1) { x1 = runif(-1, 1, rng); x2 = runif(-1, 1, rng); w = x1 * x1 + x2 * x2; }
@@ -78,14 +78,13 @@ function cone(pts, slopeVal) {
 
 function mountains(pts, extent, n, rng, template) {
   const configs = {
-    island:      { ranges: [2, 4], len: [40, 130], width: [4, 18],  outlier: 0.15, spread: 0.25 },
-    archipelago: { ranges: [4, 6], len: [15, 60],  width: [2, 8],   outlier: 0.10, spread: 0.35 },
-    bay:         { ranges: [1, 3], len: [50, 140], width: [6, 20],  outlier: 0.10, spread: 0.20 },
-    coast:       { ranges: [1, 3], len: [60, 160], width: [5, 15],  outlier: 0.10, spread: 0.15 },
-    fjord:       { ranges: [3, 5], len: [40, 100], width: [2, 6],   outlier: 0.08, spread: 0.20 },
-    peninsula:   { ranges: [1, 2], len: [60, 150], width: [3, 10],  outlier: 0.10, spread: 0.15 },
-    lake:        { ranges: [2, 4], len: [40, 120], width: [4, 14],  outlier: 0.10, spread: 0.25 },
-    land:        { ranges: [3, 6], len: [80, 200], width: [8, 28],  outlier: 0.20, spread: 0.35 },
+    island: { ranges: [2, 4], len: [40, 130], width: [4, 18], outlier: 0.15, spread: 0.25 },
+    archipelago: { ranges: [4, 6], len: [15, 60], width: [2, 8], outlier: 0.10, spread: 0.35 },
+    bay: { ranges: [1, 3], len: [50, 140], width: [6, 20], outlier: 0.10, spread: 0.20 },
+    fjord: { ranges: [3, 5], len: [40, 100], width: [2, 6], outlier: 0.08, spread: 0.20 },
+    peninsula: { ranges: [1, 2], len: [60, 150], width: [3, 10], outlier: 0.10, spread: 0.15 },
+    lake: { ranges: [2, 4], len: [40, 120], width: [4, 14], outlier: 0.10, spread: 0.25 },
+    land: { ranges: [3, 6], len: [80, 200], width: [8, 28], outlier: 0.20, spread: 0.35 },
   };
   const c = configs[template] || configs.island;
 
@@ -538,14 +537,13 @@ export function buildRegion(template, cols, rows, seed, mountainCount, baseTemp 
   // Island mask: mountains keep their shape, just fade at edges.
   // Angular perturbation breaks the circular outline into jagged bays and headlands.
   const maskConfigs = {
-    island:      { radius: 0.48, offX: 0,    offY: 0,     amp: [0.22, 0.14, 0.08, 0.04] },
-    archipelago: { radius: 0.32, offX: 0,    offY: 0,     amp: [0.30, 0.18, 0.10, 0.05] },
-    bay:         { radius: 1.00, offX: 0,    offY: -0.25, amp: [0.15, 0.10, 0.05, 0.02] },
-    coast:       { radius: 0.52, offX: 0,    offY: -0.22, amp: [0.12, 0.08, 0.04, 0.02] },
-    fjord:       { radius: 1.00, offX: 0,    offY: 0,     amp: [0.10, 0.18, 0.22, 0.14] },
-    peninsula:   { radius: 0.55, offX: 0.22, offY: 0,     amp: [0.18, 0.10, 0.05, 0.02] },
-    lake:        { radius: 1.20, offX: 0,    offY: 0,     amp: [0.10, 0.06, 0.03, 0.01] },
-    land:        { radius: 2.00, offX: 0,    offY: 0,     amp: [0.00, 0.00, 0.00, 0.00] },
+    island: { radius: 0.48, offX: 0, offY: 0, amp: [0.22, 0.14, 0.08, 0.04] },
+    archipelago: { radius: 0.32, offX: 0, offY: 0, amp: [0.30, 0.18, 0.10, 0.05] },
+    bay: { radius: 5.00, offX: 0, offY: 0, amp: [0, 0, 0, 0] },
+    fjord: { radius: 5.00, offX: 0, offY: 0, amp: [0, 0, 0, 0] },
+    peninsula: { radius: 0.55, offX: 0.22, offY: 0, amp: [0.18, 0.10, 0.05, 0.02] },
+    lake: { radius: 5.00, offX: 0, offY: 0, amp: [0, 0, 0, 0] },
+    land: { radius: 5.00, offX: 0, offY: 0, amp: [0, 0, 0, 0] },
   };
   const mc = maskConfigs[template] || maskConfigs.island;
   const baseR = extent.width * mc.radius;
@@ -556,9 +554,9 @@ export function buildRegion(template, cols, rows, seed, mountainCount, baseTemp 
     const angle = Math.atan2(y, x);
     const a = mc.amp;
     const perturb = a[0] * Math.sin(angle * 2 + 0.5)
-                  + a[1] * Math.sin(angle * 5 + 1.3)
-                  + a[2] * Math.sin(angle * 11 + 2.7)
-                  + a[3] * Math.sin(angle * 23 + 4.1);
+      + a[1] * Math.sin(angle * 5 + 1.3)
+      + a[2] * Math.sin(angle * 11 + 2.7)
+      + a[3] * Math.sin(angle * 23 + 4.1);
     const effectiveR = baseR * (1 + perturb);
     const t = d / effectiveR;
     const mask = 1 - t * t * (3 - 2 * t);
@@ -570,11 +568,38 @@ export function buildRegion(template, cols, rows, seed, mountainCount, baseTemp 
   h = peaky(h);
   h = doErosion(h, runif(0.02, 0.12, rng), 8, adj, pts, extent);
 
-  const waterQuantile = { island: 0.40, archipelago: 0.55, bay: 0.08, coast: 0.30, fjord: 0.06, peninsula: 0.42, lake: 0.05, land: 0.00 };
+  // Fjord carved before sea-level so the trench is reliably below water cutoff
+  if (template === 'fjord') {
+    const edge = Math.floor(rng() * 4);
+    const edgeOff = runif(-50, 50, rng), angVar = runif(-0.3, 0.3, rng);
+    let sx, sy, angle;
+    if (edge === 0) { sx = edgeOff; sy = 160; angle = -Math.PI / 2 + angVar; }
+    else if (edge === 1) { sx = 160; sy = edgeOff; angle = Math.PI + angVar; }
+    else if (edge === 2) { sx = edgeOff; sy = -160; angle = Math.PI / 2 + angVar; }
+    else { sx = -160; sy = edgeOff; angle = angVar; }
+    const len = runif(120, 300, rng);
+    const width = runif(6, 16, rng);
+    const depth = runif(0.3, 0.6, rng);
+    for (let i = 0; i < pts.length; i++) {
+      const dx = pts[i][0] - sx, dy = pts[i][1] - sy;
+      const along = dx * Math.cos(angle) + dy * Math.sin(angle);
+      if (along < -5 || along > len) continue;
+      const perp = -dx * Math.sin(angle) + dy * Math.cos(angle);
+      const d2 = perp * perp;
+      h[i] -= Math.exp(-d2 / (2 * width * width)) * depth;
+    }
+  }
+
+  const waterQuantile = { island: 0.40, archipelago: 0.55, fjord: 0.01, lake: 0.005, bay: 0.005, peninsula: 0.42, land: 0.00 };
   const wq = waterQuantile[template] || 0.35;
   h = setSeaLevel(h, wq);
   h = fillSinks(h, adj, pts, extent);
   h = cleanCoast(h, adj, pts, 3);
+
+  // Land: ensure no cells at exactly 0 (mesher treats h <= 0 as water)
+  if (template === 'land') {
+    for (let i = 0; i < h.length; i++) if (h[i] <= 0) h[i] = 1e-8;
+  }
 
   // ---- Template-specific terrain features (inverted depressions) ----
   if (template === 'lake') {
@@ -584,26 +609,6 @@ export function buildRegion(template, cols, rows, seed, mountainCount, baseTemp 
     for (let i = 0; i < pts.length; i++) {
       const d2 = (pts[i][0] - cx) ** 2 + (pts[i][1] - cy) ** 2;
       h[i] -= Math.exp(-d2 / (2 * r * r)) * depth;
-    }
-  } else if (template === 'fjord') {
-    const edge = Math.floor(rng() * 4);
-    const edgeOff = runif(-50, 50, rng), angVar = runif(-0.3, 0.3, rng);
-    let sx, sy, angle;
-    if (edge === 0) { sx = edgeOff; sy = 155; angle = -Math.PI / 2 + angVar; }
-    else if (edge === 1) { sx = 155; sy = edgeOff; angle = Math.PI + angVar; }
-    else if (edge === 2) { sx = edgeOff; sy = -155; angle = Math.PI / 2 + angVar; }
-    else { sx = -155; sy = edgeOff; angle = angVar; }
-    const len = runif(70, 140, rng);
-    const width = runif(3, 8, rng);
-    const depth = runif(0.2, 0.5, rng);
-    for (let i = 0; i < pts.length; i++) {
-      const dx = pts[i][0] - sx, dy = pts[i][1] - sy;
-      const along = dx * Math.cos(angle) + dy * Math.sin(angle);
-      if (along > 5 || along < -(len + 10)) continue;
-      const perp = -dx * Math.sin(angle) + dy * Math.cos(angle);
-      const fade = Math.min(1, (along + len + 10) / (len * 0.2 + 1));
-      const d2 = perp * perp;
-      h[i] -= Math.exp(-d2 / (2 * width * width)) * depth * fade;
     }
   } else if (template === 'bay') {
     const edge = Math.floor(rng() * 4);
