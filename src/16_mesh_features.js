@@ -70,7 +70,7 @@ export function buildMeshMountains(region) {
   return group;
 }
 
-const FOREST_DENSITY = [0, 0, 0, 0.3, 0.25, 0.7, 0.7, 1.0, 1.0, 0.6, 0.05, 0, 0.4];
+const FOREST_DENSITY = [0, 0, 0, 0.2, 0.2, 0.7, 0.7, 1.0, 1.0, 0.5, 0.05, 0, 0.4];
 
 export function buildMeshForests(region) {
   const { pts, heights, waterLevel, heightMax, biome, seed } = region;

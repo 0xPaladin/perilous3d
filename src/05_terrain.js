@@ -370,7 +370,151 @@ function doErosion(h, amount, n, adj, pts, extent) {
   return result;
 }
 
-export function buildRegion(template, cols, rows, seed, mountainCount) {
+function computeTemperature(pts, heights, waterLevel, baseTemp) {
+  const n = pts.length;
+  const temperature = new Float64Array(n);
+  let maxLandH = -Infinity;
+  for (let i = 0; i < n; i++) {
+    if (heights[i] > waterLevel && heights[i] > maxLandH) maxLandH = heights[i];
+  }
+  if (maxLandH === -Infinity) maxLandH = 1;
+  for (let i = 0; i < n; i++) {
+    const latFactor = pts[i][1] / 160;
+    let t = baseTemp + latFactor * 0.5;
+    if (heights[i] > waterLevel) {
+      t -= ((heights[i] - waterLevel) / maxLandH) * 10;
+    }
+    temperature[i] = t;
+  }
+  return temperature;
+}
+
+const BIOMES_MATRIX = [
+  new Uint8Array([1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 10]),
+  new Uint8Array([3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 9, 9, 9, 9, 10, 10, 10]),
+  new Uint8Array([5, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 9, 9, 9, 9, 9, 10, 10, 10]),
+  new Uint8Array([5, 6, 6, 6, 6, 6, 6, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 9, 9, 9, 9, 9, 9, 10, 10, 10]),
+  new Uint8Array([7, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 9, 9, 9, 9, 9, 9, 9, 10, 10]),
+];
+
+function biomeFromMatrix(normH, tempBand, moisture) {
+  if (normH < 0) return 0;
+  if (normH > 0.80) return 11;
+  const moistureBand = Math.min(Math.floor(moisture / 5), 4);
+  return BIOMES_MATRIX[moistureBand][tempBand];
+}
+
+function computeMoisture(pts, heights, waterLevel, adj, flux) {
+  const n = pts.length;
+  const rawMoisture = new Float64Array(n);
+  const moisture = new Float64Array(n);
+  const isRiver = new Uint8Array(n);
+  const visited = new Uint8Array(n);
+
+  let maxFlux = 0;
+  for (let i = 0; i < n; i++) {
+    if (flux[i] > maxFlux) maxFlux = flux[i];
+  }
+  if (maxFlux === 0) maxFlux = 1;
+  const riverThreshold = maxFlux * 0.1;
+
+  for (let i = 0; i < n; i++) {
+    if (flux[i] > riverThreshold && heights[i] > waterLevel) {
+      isRiver[i] = 1;
+    }
+  }
+
+  const queue = [];
+  for (let i = 0; i < n; i++) {
+    if (heights[i] <= waterLevel) {
+      rawMoisture[i] = 8;
+      queue.push(i);
+      visited[i] = 1;
+      continue;
+    }
+    if (isRiver[i]) {
+      rawMoisture[i] = 10;
+      queue.push(i);
+      visited[i] = 1;
+      continue;
+    }
+    const nbs = adj[i];
+    let nearCoast = false;
+    for (const j of nbs) {
+      if (heights[j] <= waterLevel) {
+        nearCoast = true;
+        break;
+      }
+    }
+    if (nearCoast) {
+      rawMoisture[i] = 7;
+      queue.push(i);
+      visited[i] = 1;
+    }
+  }
+
+  let head = 0;
+  while (head < queue.length) {
+    const current = queue[head++];
+    const nbs = adj[current];
+    for (let k = 0; k < nbs.length; k++) {
+      const j = nbs[k];
+      if (visited[j]) continue;
+      if (heights[j] > waterLevel) {
+        rawMoisture[j] = Math.max(0, rawMoisture[current] * 0.94);
+        visited[j] = 1;
+        queue.push(j);
+      }
+    }
+  }
+
+  for (let i = 0; i < n; i++) {
+    if (heights[i] > waterLevel) {
+      const nbs = adj[i];
+      let raw = rawMoisture[i];
+      if (isRiver[i]) raw += Math.max(flux[i] / 10, 2);
+      const landNeighbors = [];
+      for (const j of nbs) {
+        if (heights[j] > waterLevel) {
+          landNeighbors.push(rawMoisture[j]);
+        }
+      }
+      landNeighbors.push(raw);
+      let sum = 0;
+      for (const v of landNeighbors) sum += v;
+      moisture[i] = 4 + sum / landNeighbors.length;
+    } else {
+      moisture[i] = 0;
+    }
+  }
+
+  return moisture;
+}
+
+function computeRivers(h, adj) {
+  const dh = downhill(h, adj);
+  const flux = getFlux(h, adj);
+  const n = h.length;
+  let maxFlux = 0;
+  for (let i = 0; i < n; i++) {
+    if (flux[i] > maxFlux) maxFlux = flux[i];
+  }
+  if (maxFlux === 0) maxFlux = 1;
+  const threshold = maxFlux * 0.1;
+  const isRiver = new Uint8Array(n);
+  for (let i = 0; i < n; i++) {
+    if (flux[i] > threshold && h[i] > 0) isRiver[i] = 1;
+  }
+  const segments = [];
+  for (let i = 0; i < n; i++) {
+    if (isRiver[i] && dh[i] >= 0 && isRiver[dh[i]]) {
+      segments.push([i, dh[i]]);
+    }
+  }
+  return { segments, flux, dh };
+}
+
+export function buildRegion(template, cols, rows, seed, mountainCount, baseTemp = 22) {
   const rng = createRng(seed);
   const extent = { width: 320, height: 320 };
   const npts = 12000 + Math.floor(rng() * 8000);
@@ -481,6 +625,22 @@ export function buildRegion(template, cols, rows, seed, mountainCount) {
   const heightMax = Math.max(...h);
   const heightRange = heightMax - heightMin || 1;
 
+  const temperature = computeTemperature(pts, h, waterLevel, baseTemp);
+  const tempBand = new Uint8Array(npts);
+  for (let i = 0; i < npts; i++) {
+    tempBand[i] = Math.min(Math.max(20 - temperature[i], 0), 25) | 0;
+  }
+
+  const rivers = computeRivers(h, adj);
+  const moisture = computeMoisture(pts, h, waterLevel, adj, rivers.flux);
+
+  const maxLandH = Math.max(heightMax - waterLevel, 0.001);
+  const biome = new Uint8Array(npts);
+  for (let i = 0; i < npts; i++) {
+    const normH = (h[i] - waterLevel) / maxLandH;
+    biome[i] = biomeFromMatrix(normH, tempBand[i], moisture[i]);
+  }
+
   return {
     pts,
     triangles: del.triangles,
@@ -496,5 +656,10 @@ export function buildRegion(template, cols, rows, seed, mountainCount) {
     seed,
     mountainCount: nm,
     mounts: mountainResult.mounts,
+    temperature,
+    tempBand,
+    moisture,
+    biome,
+    rivers,
   };
 }

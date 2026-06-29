@@ -10,7 +10,7 @@ import { progressPanel, updateSeedDisplay } from './11_ui.js';
 
 let sceneState = null;
 
-function generate(template, seedStr, mountainCount) {
+function generate(template, seedStr, mountainCount, baseTemp) {
   const seed = seedFromString(seedStr);
   const seedNum = seed.toString(36).toUpperCase();
   updateSeedDisplay(seedNum);
@@ -30,7 +30,7 @@ function generate(template, seedStr, mountainCount) {
 
   let region;
   try {
-    region = buildRegion(template, 55, 55, seed, mountainCount, 22);
+    region = buildRegion(template, 55, 55, seed, mountainCount, baseTemp);
   } catch (e) {
     console.error('terrain generation failed:', e);
     progressPanel.hide();
@@ -51,8 +51,9 @@ function generate(template, seedStr, mountainCount) {
 function newIsland() {
   const template = document.getElementById('template-select').value;
   const mountainCount = parseInt(document.getElementById('mountains-slider').value, 10);
+  const baseTemp = parseInt(document.getElementById('temp-slider').value, 10);
   const randomSeed = Math.random().toString(36).substring(2, 10) + Date.now().toString(36);
-  generate(template, randomSeed, mountainCount);
+  generate(template, randomSeed, mountainCount, baseTemp);
 }
 
 function resetCamera() {
@@ -74,6 +75,9 @@ document.getElementById('btn-biome').addEventListener('click', () => {
 document.getElementById('mountains-slider').addEventListener('input', function() {
   document.getElementById('mountains-value').textContent = this.value;
 });
+document.getElementById('temp-slider').addEventListener('input', function() {
+  document.getElementById('temp-value').textContent = this.value;
+});
 
 // Load URL seed or generate new
 const urlParams = new URLSearchParams(window.location.search);
@@ -88,15 +92,21 @@ const initialMountains = urlMountains ? parseInt(urlMountains, 10) : 200;
 document.getElementById('mountains-slider').value = initialMountains;
 document.getElementById('mountains-value').textContent = initialMountains;
 
+const urlTemp = urlParams.get('temp');
+const initialTemp = urlTemp ? parseInt(urlTemp, 10) : Math.floor(Math.random() * 30 + 5);
+document.getElementById('temp-slider').value = initialTemp;
+document.getElementById('temp-value').textContent = initialTemp;
+
 const initialSeed = urlSeed || (Math.random().toString(36).substring(2, 10) + Date.now().toString(36));
-generate(initialTemplate, initialSeed, initialMountains);
+generate(initialTemplate, initialSeed, initialMountains, initialTemp);
 
 // Update URL without reloading
-const updateURL = (template, seed, mountainCount) => {
+const updateURL = (template, seed, mountainCount, baseTemp) => {
   const url = new URL(window.location);
   url.searchParams.set('template', template);
   url.searchParams.set('seed', seed);
   url.searchParams.set('mountains', mountainCount);
+  url.searchParams.set('temp', baseTemp);
   history.replaceState({}, '', url);
 };
 
@@ -109,6 +119,7 @@ window.addEventListener('load', () => {
     origNewIsland();
     const seed = seedFromString(document.getElementById('seed-display').textContent.replace('seed: ', ''));
     const mc = document.getElementById('mountains-slider').value;
-    updateURL(document.getElementById('template-select').value, seed.toString(36), mc);
+    const bt = document.getElementById('temp-slider').value;
+    updateURL(document.getElementById('template-select').value, seed.toString(36), mc, bt);
   });
 });

@@ -22,9 +22,9 @@ body { margin: 0; overflow: hidden; font-family: Arial, sans-serif; }
 #template-select { font-size: 14px; padding: 6px; margin-right: 8px; }
 .insel_button { display: inline-block; border: 1px solid #666; padding: 6px 14px; background: rgba(255,255,255,0.6); cursor: pointer; font-size: 15px; margin: 0 4px; }
 .insel_button:hover { background: #000; color: #fff; }
-#mountains-container { display: inline-block; margin: 0 8px; vertical-align: middle; }
-#mountains-container label { font-size: 13px; color: #fff; background: rgba(0,0,0,0.4); padding: 3px 8px; border-radius: 4px; }
-#mountains-slider { width: 80px; vertical-align: middle; }
+#mountains-container, #temp-container { display: inline-block; margin: 0 8px; vertical-align: middle; }
+#mountains-container label, #temp-container label { font-size: 13px; color: #fff; background: rgba(0,0,0,0.4); padding: 3px 8px; border-radius: 4px; }
+#mountains-slider, #temp-slider { width: 80px; vertical-align: middle; }
 #progress-panel { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(255,255,255,0.85); padding: 25px 40px; border-radius: 12px; text-align: center; z-index: 20; display: none; }
 #progress-title { font-size: 20px; margin: 0 0 6px; }
 #progress-step { font-size: 14px; color: #444; margin: 0 0 12px; }
@@ -56,6 +56,10 @@ body { margin: 0; overflow: hidden; font-family: Arial, sans-serif; }
   <div id="mountains-container">
     <label>Mountains: <span id="mountains-value">200</span></label>
     <input type="range" id="mountains-slider" min="0" max="500" value="200">
+  </div>
+  <div id="temp-container">
+    <label>Base Temp: <span id="temp-value">22</span>°C</label>
+    <input type="range" id="temp-slider" min="0" max="35" value="22">
   </div>
   <div class="insel_button" id="btn-new">New Island</div>
   <div class="insel_button" id="btn-lost">Reset View</div>
