@@ -51,6 +51,17 @@ export function createScene(canvas, region) {
     scene.add(buildSettlements(region, scene));
   });
 
+  // ---- Mesh feature objects (mountains, forests from meshDev) ----
+  import('./16_mesh_features.js').then(({ buildMeshMountains, buildMeshForests }) => {
+    const mountainGroup = buildMeshMountains(region);
+    mountainGroup.name = 'meshMountains';
+    scene.add(mountainGroup);
+
+    const forestGroup = buildMeshForests(region);
+    forestGroup.name = 'meshForests';
+    scene.add(forestGroup);
+  });
+
   // ---- Water plane ----
   const waterGeom = new THREE.PlaneGeometry(320, 320);
   const waterMat = new THREE.MeshPhongMaterial({

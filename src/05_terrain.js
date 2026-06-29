@@ -131,7 +131,8 @@ function mountains(pts, extent, n, rng, template) {
     my = Math.max(-margin, Math.min(margin, my));
 
     const r = runif(1.2, 2.0 + sizeFactor * 4, rng);
-    mounts.push({ x: mx, y: my, r });
+    const peakHeight = r * runif(0.6, 1.2, rng);
+    mounts.push({ x: mx, y: my, r, peakHeight });
   }
 
   // ---- Accumulate heights (cone + skirt, unchanged) ----
@@ -148,7 +149,7 @@ function mountains(pts, extent, n, rng, template) {
     }
     h[i] = sum;
   }
-  return h;
+  return { heights: h, mounts };
 }
 
 function extentForPoints(pts) {
@@ -382,7 +383,8 @@ export function buildRegion(template, cols, rows, seed, mountainCount) {
   const adj = buildAdjacency(del, npts);
 
   const nm = mountainCount != null ? mountainCount : 80;
-  let h = mountains(pts, extent, nm, rng, template);
+  const mountainResult = mountains(pts, extent, nm, rng, template);
+  let h = mountainResult.heights;
 
   // Subtract baseline so valleys start at 0
   let hMin = Infinity;
@@ -419,7 +421,7 @@ export function buildRegion(template, cols, rows, seed, mountainCount) {
     h[i] *= Math.max(0, mask);
   }
 
-  // No relaxation — sharp peaks
+  // No relaxation ï¿½ sharp peaks
   h = normalize(h);
   h = peaky(h);
   h = doErosion(h, runif(0.02, 0.12, rng), 8, adj, pts, extent);
@@ -492,6 +494,7 @@ export function buildRegion(template, cols, rows, seed, mountainCount) {
     waterLevel,
     template,
     seed,
-    mountainCount: nm
+    mountainCount: nm,
+    mounts: mountainResult.mounts,
   };
 }

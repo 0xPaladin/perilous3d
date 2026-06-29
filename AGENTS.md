@@ -27,6 +27,11 @@ perilous3d/
     ├── 08_colors.js    # PS terrain palette (legacy, kept for reference)
     ├── 10_renderer.js  # scene, lights, water plane, clouds, OrbitControls, render loop
     ├── 11_ui.js        # progress overlay, seed display, URL sync
+    ├── 12_mesh_noise.js    # Seeded Perlin noise, FBM, domain warp (from meshDev)
+    ├── 13_mesh_mountain.js # Mountain tile generator + vertex-colored mesh builder
+    ├── 14_mesh_terrain.js  # Hill & dune tile generators + mesh builders
+    ├── 15_mesh_tree.js     # Tree (5 presets) + forest (InstancedMesh) generators
+    ├── 16_mesh_features.js # Integration: places meshDev mountains & forests on terrain
     └── main.js         # bootstrap: parse URL / new seed → buildRegion → createScene → animate
 ```
 
@@ -43,10 +48,12 @@ python -m http.server 8000
 ## Conventions
 
 - ES module syntax (`import`/`export`), one responsibility per file
-- **05_terrain.js** exports `buildRegion(template, cols, rows, seed, mountainCount)` → returns `{ pts, triangles, heights, heightMin, heightMax, extent, waterLevel, ... }`
+- **05_terrain.js** exports `buildRegion(template, cols, rows, seed, mountainCount)` → returns `{ pts, triangles, heights, heightMin, heightMax, extent, waterLevel, mounts, ... }` where `mounts` is an array of `{ x, y, r, peakHeight }` for each mountain peak
 - Heights are raw values (post-sea-level-cut); underwater vertices are negative, sea level = 0
 - **07_mesher.js** scales heights by `HEIGHT_SCALE / maxLandH` for world-Y; water plane at Y=0.02
 - Colors are linear RGB `[0-1]` floats; vertex colors assigned by elevation bands
+- **16_mesh_features.js** places meshDev 3D meshes on the terrain surface using the `mounts` array for peak positions and nearest-neighbor terrain height lookup
+- **13_mesh_mountain.js**, **14_mesh_terrain.js**, **15_mesh_tree.js** use `MeshStandardMaterial` with `flatShading: true`, `vertexColors: true`; import `three` via importmap
 - No external APIs, no build tooling, no bundler — keep it that way unless asked
 
 ## Key Extension Points
@@ -63,6 +70,11 @@ python -m http.server 8000
 | Tweak vertex colors               | `07_mesher.js` → `COLORS` + `terrainColor()` thresholds |
 | Increase mesh detail              | `05_terrain.js` → `npts` (point count) |
 | Add trees/buildings               | `07_mesher.js` → `buildTrees()` / `buildSettlements()` |
+| Tune meshDev mountain appearance  | `13_mesh_mountain.js` → `generateMountainTile()` (peak count, falloff, sub-peaks) + `HEIGHT_COLORS` palette |
+| Tune forest density               | `16_mesh_features.js` → `buildMeshForests()` — elevation band thresholds, clustering radius, `density` filter |
+| Tune forest tree shape            | `15_mesh_tree.js` → `generateForest()` (trunk height/radius ratios, canopy size, tree height) |
+| Tune mesh mountain placement      | `16_mesh_features.js` → `buildMeshMountains()` — xyScale/yScale multipliers, tileH formula |
+| Adjust forest elevation range     | `16_mesh_features.js` → `normH` filter thresholds (0.06–0.55) in `buildMeshForests()` |
 | Add noise detail layer            | Reintegrate `02_noise.js` into `05_terrain.js` pipeline |
 | Share a world                     | URL auto-updated with `?template=X&seed=Y&mountains=N` |
 
@@ -77,6 +89,8 @@ python -m http.server 8000
 - **Template features**: After coast cleaning, Bay/Fjord/Lake get inverted gaussian depressions — lake (central basin), fjord (linear trench from random edge), bay (broad blob from random edge). These push terrain below sea level to form the named water feature.
 - **Water plane**: Opaque `PlaneGeometry(320, 320)` at Y=0.02 with polygonOffset, only rendered for island/archipelago/coast/peninsula. Land/lake/fjord/bay have no water plane — water is represented by the terrain mesh colored via vertex colors.
 - **Scale**: Extent 320×320 km, HEIGHT_SCALE 3.5 km, camera (0, 120, 260)
+- **meshDev Mountains**: `buildMeshMountains()` in `16_mesh_features.js` iterates the `mounts` array from `buildRegion()`, generates a meshDev mountain tile per peak (seeded PRNG per mount), scales XY by `r / 3.5` and Y by `r * 0.35`, and positions it at the terrain surface via nearest-neighbor height lookup.
+- **Forests**: `buildMeshForests()` filters terrain vertices by normalized elevation (0.06–0.55), clusters points within 8 km radius (min 8 per cluster), and places InstancedMesh forest groups using `generateForest()` from `15_mesh_tree.js` at cluster centroids, raised to terrain Y.
 
 ## Testing
 
