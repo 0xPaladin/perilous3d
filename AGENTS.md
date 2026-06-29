@@ -28,13 +28,13 @@ perilous3d/
     │                    #   + cities (top habitability sites, ≥32 km separation, coastal + resource-biased)
     │                    #   + towns (3 per city or 4 standalone if 0 cities, within 30 km of parent,
     │                    #         ≥25 km separation, coastal + resource-biased)
-    │                    #   + resources (2–4 biome-weighted deposits: game/hide/fur, timber/clay,
+    │                    #   + resources (Max(#cities,2) biome-weighted deposits: game/hide/fur, timber/clay,
     │                    #         herb/spice/dye, copper/tin/iron, silver/gold/gems, exotic)
     │                    #   + trouble (danger markers: 1 per resource + safety-based extras near
     │                    #         settlements/ruins, worst habitability within ~20–30 km)
     ├── 06_coast.js     # Chaikin smoothing (retained, unused by current pipeline)
     ├── 07_mesher.js    # Delaunay triangles → indexed THREE.BufferGeometry + vertex colors
-    │                    #   + river mesh (LineSegments) + biome view mesh (wireframe overlay)
+    │                    #   + river mesh (LineSegments)
     │                    #   + settlements: cities (keep+tower+roof) and towns (smaller hut/roof)
     │                    #   + resources: gold octahedron markers floating above deposit sites
     │                    #   + ruins: clustered stone pillars
@@ -50,13 +50,14 @@ perilous3d/
     ├── 16_mesh_features.js # Integration: places meshDev mountains & forests on terrain;
     │                    #   skips forest clusters within 5 km of any city or town so they stay visible
     ├── 17_gui.js         # lil-gui initialization: folders for Template, Parameters, Actions, Info
+    ├── 18_items.js       # locations panel: category select + clickable item list + fly-to camera + zoom out
     └── main.js         # bootstrap: parse URL / new seed → buildRegion → createScene → animate → initGUI
 ```
 
 ## Conventions
 
 - ES module syntax (`import`/`export`), one responsibility per file
-- **05_terrain.js** exports `buildRegion(template, cols, rows, seed, mountainCount, baseTemp, cityCount)` → returns `{ pts, triangles, heights, heightMin, heightMax, extent, waterLevel, mounts, rivers, moisture, temperature, tempBand, biome, habitability, nearWater, cities, towns, resources, ruins, minorRuins, trouble, ... }` where `mounts` is an array of `{ x, y, r, peakHeight }` for each mountain peak; `rivers` has `segments` (downhill edges) and `flux` (flow accumulation); `moisture` has per-vertex values in ~4–50 range; `biome` has per-vertex Azgaar biome indices (0–12); `habitability` is a Float64Array (~0–125) scoring how suitable each cell is for towns; `nearWater` is a Uint8Array marking cells within ~3 hops of a coast/river; `cities` is `[{ x, z, idx, habitability }]` top-sorted land cells spaced ≥32 km apart, coastal-biased; `towns` is the same shape, placed ≤30 km from parent city (3 per city) or 4 standalone sites when 0 cities exist, spaced ≥25 km apart, coastal-biased; `resources` is `[{ x, z, idx, type }]` for 2–4 biome-weighted mineral/food deposits; `ruins` is `[{ x, z, idx }]` for 2–4 elevated habitability sites near settlements; `minorRuins` is `[{ x, z, idx }]` for 4+1d6 random obelisks anywhere on land; `trouble` is `[{ x, z, idx, type }]` danger markers (1 per resource + safety-scaled extras near settlements/ruins)
+- **05_terrain.js** exports `buildRegion(template, cols, rows, seed, mountainCount, baseTemp, cityCount)` → returns `{ pts, triangles, heights, heightMin, heightMax, extent, waterLevel, mounts, rivers, moisture, temperature, tempBand, biome, habitability, nearWater, cities, towns, resources, ruins, minorRuins, trouble, ... }` where `mounts` is an array of `{ x, y, r, peakHeight }` for each mountain peak; `rivers` has `segments` (downhill edges) and `flux` (flow accumulation); `moisture` has per-vertex values in ~4–50 range; `biome` has per-vertex Azgaar biome indices (0–12); `habitability` is a Float64Array (~0–125) scoring how suitable each cell is for towns; `nearWater` is a Uint8Array marking cells within ~3 hops of a coast/river; `cities` is `[{ x, z, idx, habitability }]` top-sorted land cells spaced ≥32 km apart, coastal-biased; `towns` is the same shape, placed ≤30 km from parent city (3 per city) or 4 standalone sites when 0 cities exist, spaced ≥25 km apart, coastal-biased; `resources` is `[{ x, z, idx, type }]` for Max(#cities,2) biome-weighted mineral/food deposits; `ruins` is `[{ x, z, idx }]` for 1–2 elevated habitability sites near settlements; `minorRuins` is `[{ x, z, idx }]` for 4+1d6 random obelisks anywhere on land; `trouble` is `[{ x, z, idx, type }]` danger markers (1 per resource + safety-scaled extras near settlements/ruins)
 - Heights are raw values (post-sea-level-cut); underwater vertices are negative, sea level = 0
 - **07_mesher.js** flattens terrain to `Y = 0.1` for land and `Y = 0.0` for water; river lines float above at `0.2` (land) / `0.05` (water); biome colors are still derived from the original height field; settlements render as procedural Three.js meshes added to a `settlements` group
 - Colors are linear RGB `[0-1]` floats; vertex colors assigned by Azgaar 5×26 biome matrix (temperature × moisture) in `05_terrain.js` → `BIOME_COLORS` lookup in `07_mesher.js`
@@ -80,10 +81,10 @@ perilous3d/
 | Add habitability score           | `05_terrain.js` → `HABITABILITY` array + `computeHabitability()` (biome base × elevation gaussian × slope penalty + water proximity)                                                     |
 | Tune city/town count / coastal bias | `src/17_gui.js` `Parameters.Safety` (Perilous=0, Dangerous=1, Unsafe=2, Safe=3) → passed as `cityCount` to `buildRegion()` → `findCities()` / `findTowns()`                             |
 | Place 3 towns per city           | `05_terrain.js` → `findTowns()` — 3 towns ≤30 km of each city, or 4 standalone if 0 cities; ≥25 km separation; coastal + resource bonuses via `nearWater` / `nearResource`                                             |
-| Generate resources               | `05_terrain.js` → `generateResources()` picks 2–4 unique resource types per region, weighted by biome (e.g., timber in forests, metals in highlands)                                                               |
+| Generate resources               | `05_terrain.js` → `generateResources()` picks Max(#cities,2) unique resource types per region, weighted by biome (e.g., timber in forests, metals in highlands)                                                               |
 | Resource proximity bonus         | Cities/towns add +15 to their placement score when within 15 km of a generated resource deposit                                                                                                                        |
-| Generate resources               | `05_terrain.js` → `generateResources()` picks 2–4 unique resource types per region, weighted by biome (e.g., timber in forests, metals in highlands/cold)                                                               |
-| Generate great ruins             | `05_terrain.js` → `findRuins()` — 2–4 abandoned city sites near existing settlements, ≥30 km apart, rendered as broken stone pillar clusters in `07_mesher.js`                                                         |
+| Generate resources               | `05_terrain.js` → `generateResources()` picks Max(#cities,2) unique resource types per region, weighted by biome (e.g., timber in forests, metals in highlands/cold)                                                               |
+| Generate great ruins             | `05_terrain.js` → `findRuins()` — 1–2 abandoned city sites near existing settlements, ≥30 km apart, rendered as broken stone pillar clusters in `07_mesher.js`                                                         |
 | Generate minor ruins             | `05_terrain.js` → `findMinorRuins()` — 4 + 1d6 (5-10) random tall gray obelisks anywhere on land, ≥20 km apart, rendered as tall `CylinderGeometry(0.3, 0.4, 3.5)` in `07_mesher.js`                                    |
 | Generate trouble markers        | `05_terrain.js` → `findTrouble()` — 1 per resource (worst habitability within 20 km) + safety-scaled extras: half near cities/towns (~30 km), half on ruin sites; rendered as inverted red pyramids in `07_mesher.js`                               |
 | Prevent forest obscuring cities/towns/ruins | `16_mesh_features.js` → `CLEAR_RADIUS_SQ` (5 km) around `region.cities` + `region.towns`; 3 km around `region.minorRuins`                                                               |
@@ -114,16 +115,15 @@ perilous3d/
 - **Settlements (meshing)**: `buildSettlements()` in `07_mesher.js` renders cities as a stone keep (wide low cylinder) + tower + cone roof, and towns as a smaller single-wall hut + cone roof. All placed at Y = 0.1 (land flat height).
 - **Resource markers**: `buildResources()` in `07_mesher.js` places a gold octahedron (radius 1.2) floating at Y = terrain + 2.0 above each resource deposit.
 - **Forest clearing**: `buildMeshForests()` in `16_mesh_features.js` skips placing any forest cluster whose centroid falls within **5 km** of any city or town position, keeping settlements visually unobstructed.
-- **Great ruins**: `findRuins()` picks 2–4 elevated habitability sites near existing settlements (within 60 km), avoiding occupied city/town cells (30 km exclusion) and enforcing ≥30 km separation between ruins themselves. Rendered as broken stone pillar clusters in `buildSettlements()`.
+- **Great ruins**: `findRuins()` picks 1–2 elevated habitability sites near existing settlements (within 60 km), avoiding occupied city/town cells (30 km exclusion) and enforcing ≥30 km separation between ruins themselves. Rendered as broken stone pillar clusters in `buildSettlements()`.
 - **Minor ruins**: `findMinorRuins()` places 4 + 1d6 (5–10) random tall gray obelisks anywhere on land, ≥20 km apart. Rendered as tall `CylinderGeometry(0.3, 0.4, 3.5)` standing at terrain Y + 1.75.
 - **Trouble**: `findTrouble()` creates danger markers: exactly 1 per resource (worst habitability cell within ~20 km), plus safety-scaled extras — Perilous=6, Dangerous=4, Unsafe=2, Safe=0. Half the extras land within ~30 km of a city/town (worst habitability), the other half on random ruin sites. Rendered as inverted red pyramids (`ConeGeometry` rotated π) in `buildTrouble()`.
 - **meshDev Mountains**: `buildMeshMountains()` in `16_mesh_features.js` iterates the `mounts` array from `buildRegion()`. For each mount, it samples the terrain height; if normalized height > 0.65, it generates a mountain tile (scaled XY by `r/3.5`, Y by `r*0.35`), otherwise a hill tile (Y by `r*0.18`). Hills use `HILL_PALETTE` (green) from `08_colors.js`, mountains use `HEIGHT_COLORS` (forest→rock→snow). Mountains and hills render at Y = 0.0 (base terrain is flat).
 - **Forests**: `buildMeshForests()` filters terrain vertices by normalized elevation (0.06–0.55), clusters points within 8 km radius (min 5 per cluster, centroid-growing algorithm), and places InstancedMesh forest groups using `generateForest()` from `15_mesh_tree.js` at cluster centroids, raised to terrain Y = 0.1. Tree appearance varies by biome via `BIOME_TREE` config (Taiga: tall trunk, narrow conical canopy, dark green; Rainforest: tall, large round canopy, deep green; Savanna: short trunk, wide flat canopy, yellow-green; Deciduous: medium, round, includes autumn hues).
-- **Biome View**: `buildBiomeViewMesh()` in `07_mesher.js` creates a non-indexed per-triangle mesh colored by the dominant biome of each triangle's vertices, with a 15% opacity wireframe overlay showing Delaunay cell boundaries. Terrain is flattened to 0.1 (land) / 0.0 (water). Toggled via the "Biome View" action in `src/17_gui.js`.
-
 **UI**: All user controls are powered by `lil-gui` (`src/17_gui.js`). The GUI is initialized by `main.js` and exposes:
 - **Template** folder: map template dropdown (island, archipelago, bay, fjord, lake, land)
 - **Parameters** folder: Mountains (0–500), Base Temp (0–35°C), and Safety (Perilous/Dangerous/Unsafe/Safe → 0/1/2/3 cities)
-- **Actions** folder: New Island (new random seed), Update (re-draw with same seed + current GUI params), Biome View toggle
+- **Actions** folder: New Island (new random seed), Update (re-draw with same seed + current GUI params)
 - **Info** folder: read-only Seed display (auto-updates on generation)
+A **Locations panel** (`18_items.js`) sits below the GUI with a category select (Cities, Towns, Resources, Ruins, Trouble), a clickable item list (fly-to camera on click), and a Zoom Out button.
 The FPS counter remains as a DOM overlay in the top-left corner (`index.html`), while the seed display was removed from DOM and moved into the GUI Info panel.

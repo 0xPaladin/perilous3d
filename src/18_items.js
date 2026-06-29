@@ -1,0 +1,121 @@
+import * as THREE from 'three';
+
+let homePos, homeTarget;
+
+export function initItemsPanel(app) {
+  const old = document.getElementById('items-panel');
+  if (old) old.remove();
+  const panel = document.createElement('div');
+  panel.id = 'items-panel';
+  panel.innerHTML = `
+    <div class="ip-header">Locations</div>
+    <select id="ip-category">
+      <option value="">Select category...</option>
+      <option value="cities">Cities</option>
+      <option value="towns">Towns</option>
+      <option value="resources">Resources</option>
+      <option value="ruins">Ruins</option>
+      <option value="trouble">Trouble</option>
+    </select>
+    <div id="ip-list"></div>
+    <button id="ip-zoomout" style="display:none">Zoom Out</button>
+  `;
+  document.body.appendChild(panel);
+
+  const select = document.getElementById('ip-category');
+  const listEl = document.getElementById('ip-list');
+  const zoomBtn = document.getElementById('ip-zoomout');
+
+  const region = app.region;
+  if (!region) return;
+
+  const items = {
+    cities: region.cities || [],
+    towns: region.towns || [],
+    resources: region.resources || [],
+    ruins: [...(region.ruins || []).map(r => ({ ...r, _subtype: 'Great Ruins' })), ...(region.minorRuins || []).map(r => ({ ...r, _subtype: 'Minor Ruins' }))],
+    trouble: region.trouble || [],
+  };
+
+  select.addEventListener('change', () => {
+    const cat = select.value;
+    zoomBtn.style.display = 'none';
+    if (!cat || !items[cat].length) {
+      listEl.innerHTML = items[cat] && items[cat].length === 0 ? '<div class="ip-empty">None</div>' : '';
+      return;
+    }
+    let html = '';
+    for (let i = 0; i < items[cat].length; i++) {
+      const item = items[cat][i];
+      const x = Math.round(item.x);
+      const y = Math.round(item.z);
+      let label;
+      if (cat === 'cities') label = `City @ ${x}, ${y}`;
+      else if (cat === 'towns') label = `Town @ ${x}, ${y}`;
+      else if (cat === 'resources') label = `${item.type} @ ${x}, ${y}`;
+      else if (cat === 'ruins') label = `${item._subtype || 'Ruins'} @ ${x}, ${y}`;
+      else if (cat === 'trouble') label = `Trouble @ ${x}, ${y}`;
+      html += `<div class="ip-item" data-x="${item.x}" data-z="${item.z}">${label}</div>`;
+    }
+    listEl.innerHTML = html;
+    zoomBtn.style.display = 'block';
+
+    listEl.querySelectorAll('.ip-item').forEach(el => {
+      el.addEventListener('click', () => {
+        const x = parseFloat(el.dataset.x);
+        const z = parseFloat(el.dataset.z);
+        flyTo(app.sceneState, x, z);
+      });
+    });
+  });
+
+  zoomBtn.addEventListener('click', () => {
+    zoomOut(app.sceneState);
+  });
+
+  // Store home view
+  if (app.sceneState) {
+    homePos = app.sceneState.camera.position.clone();
+    homeTarget = app.sceneState.controls.target.clone();
+  }
+}
+
+function flyTo(state, x, z) {
+  const { camera, controls } = state;
+  const startPos = camera.position.clone();
+  const startTarget = controls.target.clone();
+  const endTarget = new THREE.Vector3(x, 0, z);
+  const dist = Math.max(60, startPos.distanceTo(endTarget) * 0.5);
+  const endPos = new THREE.Vector3(x, dist * 0.4, z + dist * 0.6);
+  const duration = 600;
+  const startTime = performance.now();
+
+  function step() {
+    const t = Math.min((performance.now() - startTime) / duration, 1);
+    const e = t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+    camera.position.lerpVectors(startPos, endPos, e);
+    controls.target.lerpVectors(startTarget, endTarget, e);
+    controls.update();
+    if (t < 1) requestAnimationFrame(step);
+  }
+  step();
+}
+
+function zoomOut(state) {
+  if (!homePos) return;
+  const { camera, controls } = state;
+  const startPos = camera.position.clone();
+  const startTarget = controls.target.clone();
+  const duration = 600;
+  const startTime = performance.now();
+
+  function step() {
+    const t = Math.min((performance.now() - startTime) / duration, 1);
+    const e = t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+    camera.position.lerpVectors(startPos, homePos, e);
+    controls.target.lerpVectors(startTarget, homeTarget, e);
+    controls.update();
+    if (t < 1) requestAnimationFrame(step);
+  }
+  step();
+}

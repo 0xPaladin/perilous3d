@@ -650,7 +650,7 @@ function findRuins(pts, heights, waterLevel, habitability, cities, towns, count,
   const minDistSq = 30 * 30;
   const farSq = 60 * 60;
   const ruins = [];
-  const n = Math.max(2, Math.min(4, count + 2));
+  const n = 1 + Math.floor(rng() * 2);
   const occupied = (x, z) => {
     for (const s of [...cities, ...towns]) {
       const dx = x - s.x, dz = z - s.z;
@@ -718,6 +718,16 @@ function findMinorRuins(pts, heights, waterLevel, count, rngSeed) {
 function findTrouble(pts, heights, waterLevel, habitability, cities, towns, resources, ruins, safety, rngSeed) {
   const rng = createRng(rngSeed ^ 0xEED);
   const trouble = [];
+  const minDistSq = 36 * 36;
+
+  function addTrouble(x, z, idx, type) {
+    for (const t of trouble) {
+      const dx = x - t.x, dz = z - t.z;
+      if (dx * dx + dz * dz < minDistSq) return false;
+    }
+    trouble.push({ x, z, idx, type });
+    return true;
+  }
 
   for (const res of resources) {
     const candidates = [];
@@ -728,13 +738,12 @@ function findTrouble(pts, heights, waterLevel, habitability, cities, towns, reso
       candidates.push({ idx: i, score: -habitability[i] });
     }
     candidates.sort((a, b) => a.score - b.score);
-    if (candidates.length > 0) {
-      const c = candidates[0];
-      trouble.push({ x: pts[c.idx][0], z: pts[c.idx][1], idx: c.idx, type: 'resource' });
+    for (const c of candidates) {
+      if (addTrouble(pts[c.idx][0], pts[c.idx][1], c.idx, 'resource')) break;
     }
   }
 
-  const additional = (3 - safety) * 2;
+  const additional = Math.max(0, (3 - safety) * 2);
   const halfNear = Math.floor(additional / 2);
 
   for (let k = 0; k < halfNear; k++) {
@@ -748,16 +757,15 @@ function findTrouble(pts, heights, waterLevel, habitability, cities, towns, reso
       }
     }
     candidates.sort((a, b) => a.score - b.score);
-    if (candidates.length > 0) {
-      const c = candidates[k % candidates.length];
-      trouble.push({ x: pts[c.idx][0], z: pts[c.idx][1], idx: c.idx, type: 'settlement' });
+    for (const c of candidates) {
+      if (addTrouble(pts[c.idx][0], pts[c.idx][1], c.idx, 'settlement')) break;
     }
   }
 
   const halfRuins = additional - halfNear;
   for (let k = 0; k < halfRuins && k < ruins.length; k++) {
-    const r = ruins[k % ruins.length];
-    trouble.push({ x: r.x, z: r.z, idx: r.idx, type: 'ruin' });
+    const r = ruins[k];
+    if (addTrouble(r.x, r.z, r.idx, 'ruin')) continue;
   }
 
   return trouble;
@@ -783,7 +791,7 @@ const RESOURCE_BIOME_WEIGHT = {
 
 function generateResources(pts, heights, waterLevel, biome, maxLandH, count, rngSeed) {
   const rng = createRng(rngSeed ^ 0xFACE);
-  const n = Math.max(2, Math.min(4, count + 2));
+  const n = Math.max(2, count);
   const types = RESOURCE_TYPES.sort(() => rng() - 0.5).slice(0, n);
   const chosen = [];
 

@@ -24,6 +24,15 @@ body { margin: 0; overflow: hidden; font-family: Arial, sans-serif; }
 #progress-step { font-size: 14px; color: #444; margin: 0 0 12px; }
 #progress-detail { font-size: 13px; color: #333; }
 #fps { position: absolute; top: 10px; left: 10px; z-index: 10; font-size: 13px; color: #fff; background: rgba(0,0,0,0.4); padding: 4px 10px; border-radius: 4px; }
+#items-panel { position: absolute; top: 320px; right: 10px; z-index: 10; width: 240px; font-family: 'Trebuchet MS', Arial, sans-serif; font-size: 12px; background: #fafaf9; border: 1px solid #bbb; border-radius: 4px; box-shadow: 2px 2px 8px rgba(0,0,0,0.15); padding: 8px; }
+.ip-header { font-size: 13px; font-weight: bold; color: #111; margin-bottom: 6px; }
+#items-panel select { width: 100%; padding: 4px; font-size: 12px; margin-bottom: 6px; border: 1px solid #bbb; border-radius: 3px; background: #fff; color: #111; }
+#ip-list { max-height: 240px; overflow-y: auto; margin-bottom: 4px; }
+.ip-item { padding: 3px 5px; cursor: pointer; border-radius: 2px; color: #222; }
+.ip-item:hover { background: #ddeeff; }
+.ip-empty { padding: 3px 5px; color: #888; font-style: italic; }
+#ip-zoomout { width: 100%; padding: 4px; font-size: 12px; border: 1px solid #bbb; border-radius: 3px; background: #fff; cursor: pointer; color: #111; }
+#ip-zoomout:hover { background: #e8e8e8; }
 </style>
 </head>
 <body style="background: #CAE5FF">

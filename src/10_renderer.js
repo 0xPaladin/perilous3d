@@ -41,13 +41,11 @@ export function createScene(canvas, region) {
   sun.shadow.camera.bottom = -200;
   scene.add(sun);
 
-  // ---- Terrain mesh + biome view ----
+  // ---- Terrain mesh ----
   const state = { scene, camera, renderer, controls };
-  let terrainMesh = null;
-  let biomeViewGroup = null;
 
-  import('./07_mesher.js').then(({ buildTerrainMesh, buildRiverMesh, buildBiomeViewMesh, buildTrees, buildSettlements, buildResources, buildTrouble }) => {
-    terrainMesh = buildTerrainMesh(region);
+  import('./07_mesher.js').then(({ buildTerrainMesh, buildRiverMesh, buildTrees, buildSettlements, buildResources, buildTrouble }) => {
+    const terrainMesh = buildTerrainMesh(region);
     terrainMesh.receiveShadow = true;
     scene.add(terrainMesh);
 
@@ -59,20 +57,8 @@ export function createScene(canvas, region) {
     scene.add(buildResources(region));
     scene.add(buildTrouble(region));
 
-    biomeViewGroup = buildBiomeViewMesh(region);
-    biomeViewGroup.visible = false;
-    scene.add(biomeViewGroup);
-
     state.terrain = terrainMesh;
-    state.biomeView = biomeViewGroup;
   });
-
-  state.toggleBiomeView = function() {
-    if (!state.terrain || !state.biomeView) return;
-    const show = !state.biomeView.visible;
-    state.biomeView.visible = show;
-    state.terrain.visible = !show;
-  };
 
   // ---- Mesh feature objects (mountains, forests from meshDev) ----
   import('./16_mesh_features.js').then(({ buildMeshMountains, buildMeshForests }) => {

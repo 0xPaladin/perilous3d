@@ -20,16 +20,6 @@ export function initGUI({ app, generate, initialTemplate, initialMountains, init
 
   infoFolder.add(seedProxy, 'value').name('Seed').listen();
 
-  const biomeProxy = {
-    get value() {
-      return app.sceneState && app.sceneState.biomeView ? app.sceneState.biomeView.visible : false;
-    },
-    set value(v) {
-      if (!app.sceneState || !app.sceneState.toggleBiomeView) return;
-      if (app.sceneState.biomeView.visible !== v) app.sceneState.toggleBiomeView();
-    }
-  };
-
   const templateFolder = gui.addFolder('Template');
   templateFolder.add(options, 'template', ['island', 'archipelago', 'bay', 'fjord', 'lake', 'land'])
     .name('Template');
@@ -53,8 +43,6 @@ export function initGUI({ app, generate, initialTemplate, initialMountains, init
       generate(options.template, app.seedStr, options.mountains, options.baseTemp, options.safety);
     }
   }, 'fn').name('Update');
-
-  actionsFolder.add(biomeProxy, 'value').name('Biome View');
 
   return { gui, options };
 }

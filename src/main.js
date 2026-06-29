@@ -8,6 +8,7 @@ import { buildRegion } from './05_terrain.js';
 import { createScene, animate } from './10_renderer.js';
 import { progressPanel, updateSeedDisplay } from './11_ui.js';
 import { initGUI } from './17_gui.js';
+import { initItemsPanel } from './18_items.js';
 
 const app = { sceneState: null, seed: null, seedStr: null };
 
@@ -44,8 +45,10 @@ function generate(template, seedStr, mountainCount, baseTemp, safety) {
 
   logRegionStats(region);
 
+  app.region = region;
   app.sceneState = createScene(canvas, region);
   animate(app.sceneState);
+  initItemsPanel(app);
 
   const url = new URL(window.location);
   url.searchParams.set('template', template);
