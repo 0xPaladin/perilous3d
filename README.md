@@ -8,6 +8,7 @@ A browser-based 3D terrain generator using a **cartoon-style mountain** approach
 
 - **Three.js r185** — 3D rendering, `BufferGeometry`, `MeshLambertMaterial`, `OrbitControls`
 - **Delaunator** — Delaunay triangulation (mesh topology for 3D terrain)
+- **lil-gui** — floating control panel for user parameters and actions
 - **Mulberry32** — seeded PRNG for deterministic generation
 - **Vanilla ES modules** — no bundler, served directly via `<script type="module">`
 - **HTML5 import maps** — CDN-based dependency loading
@@ -35,7 +36,8 @@ index.html
      │                      cloud blobs (IcosahedronGeometry at Y=80–120), OrbitControls,
      │                      render loop with FPS counter
     ├── 11_ui.js         — progress overlay, seed display, URL sync
-    └── main.js          — bootstrap: seed → buildRegion → createScene → animate
+    ├── 17_gui.js         — lil-gui initialization: folders for Template, Parameters, Actions, Info
+    └── main.js          — bootstrap: seed → buildRegion → createScene → animate → initGUI
 ```
 
 ## Terrain Generation Pipeline
@@ -93,7 +95,7 @@ python -m http.server 8000
 ### URL Parameters
 
 ```
-https://0xPaladin.github.io/Outlands/?template=island&seed=ABCD1234&mountains=200
+https://0xPaladin.github.io/Outlands/?template=island&seed=ABCD1234&mountains=200&temp=22
 ```
 
 | Param      | Values                    | Description                              |
@@ -101,14 +103,16 @@ https://0xPaladin.github.io/Outlands/?template=island&seed=ABCD1234&mountains=20
 | `template` | `island`, `archipelago`, `bay`, `coast`, `fjord`, `peninsula`, `lake`, `land` | Map template (affects sea level) |
 | `seed`     | any URL-safe string        | Deterministic map seed                   |
 | `mountains` | 0–500                    | Number of mountain peaks                 |
+| `temp`     | 0–35                      | Base temperature in °C                   |
 
 ## Controls
 
 - **OrbitControls**: left-click rotate, right-click pan, scroll to zoom
-- **"New Island"**: generates a new random seed + map (respects mountain slider)
-- **"Reset View"**: snaps camera back to overview
-- **"Biome View"**: toggles between normal terrain colors and flat per-triangle biome cell view with Delaunay wireframe overlay
-- **Mountains slider**: real-time value display, applied on next "New Island"
+- **lil-gui** (top-right panel):
+  - **Template** → map template dropdown
+  - **Parameters** → Mountains (0–500) and Base Temp (0–35°C) sliders
+  - **Actions** → `New Island`, `Reset View`, `Biome View` toggle
+  - **Info** → current seed (read-only)
 
 ## Algorithm Notes
 
@@ -134,13 +138,13 @@ https://0xPaladin.github.io/Outlands/?template=island&seed=ABCD1234&mountains=20
 
 **Moisture** — Azgaar-style two-phase computation (`computeMoisture()` in `05_terrain.js`). Phase A: BFS from rivers (10), ocean (8), and coast-adjacent land (7) with exponential decay (0.94× per hop inland). Phase B: neighbor averaging with river flux bonus (`4 + mean(raw + max(flux/10, 2), neighbors)`). Output range ~4–50, stored in `region.moisture`.
 
-**Temperature** — `computeTemperature()` in `05_terrain.js`. Base temp parameter (±2°C latitudinal gradient, south hot / north cold) with elevation lapse rate (−10°C max). Mapped to Azgaar's 26-band scale: `tempBand = round(clamp(20 − t, 0, 25))`. Stored in `region.temperature` and `region.tempBand`.
+**Temperature** — `computeTemperature()` in `05_terrain.js`. Base temp parameter (±0.5°C latitudinal gradient across 320 km, south hot / north cold) with elevation lapse rate (−10°C max). Mapped to Azgaar's 26-band scale: `tempBand = round(clamp(20 − t, 0, 25))`. Stored in `region.temperature` and `region.tempBand`.
 
 **Biomes** — `biomeId()` in `05_terrain.js` uses Azgaar's exact 5×26 biome matrix (5 moisture bands × 26 temperature bands). Overrides: normH < 0 → Marine (0), normH > 0.80 → Glacier (11). Produces 13 biomes: Marine, Hot desert, Cold desert, Savanna, Grassland, Tropical seasonal forest, Temperate deciduous forest, Tropical rainforest, Temperate rainforest, Taiga, Tundra, Glacier, Wetland. Colors looked up via `BIOME_COLORS[13]` array in `07_mesher.js`.
 
 **Forests** — `buildMeshForests()` in `16_mesh_features.js` filters terrain vertices by normalized elevation (0.06–0.55), then applies a biome-index density lookup (`FOREST_DENSITY` array) with a 0.5 survival multiplier. Candidate points are clustered using a centroid-growing algorithm (8 km radius, min 5 per cluster). Each cluster centroid receives an InstancedMesh forest group via `generateForest()` from `15_mesh_tree.js`, which varies tree appearance by dominant biome (Taiga: tall trunk, narrow conical canopy, dark green; Rainforest: tall, large round canopy, deep green; Savanna: short trunk, wide flat canopy, yellow-green; Deciduous: medium, round, includes autumn hues).
 
-**Biome View** — `buildBiomeViewMesh()` in `07_mesher.js` creates a non-indexed per-triangle mesh where each Delaunay triangle is colored flat by its majority biome, overlaid with a 15% opacity wireframe showing cell boundaries. Toggled via the "Biome View" button in the UI.
+**Biome View** — `buildBiomeViewMesh()` in `07_mesher.js` creates a non-indexed per-triangle mesh where each Delaunay triangle is colored flat by its majority biome, overlaid with a 15% opacity wireframe showing cell boundaries. Toggled via the "Biome View" action in the `Actions` folder of the lil-gui panel (`src/17_gui.js`).
 
 ## Credits
 

@@ -36,14 +36,13 @@ function biomeFromMatrix(normH, tempBand, moisture) {
 export function buildTerrainMesh(region) {
   const { pts, triangles, heights, heightMax, waterLevel, tempBand, moisture, biome } = region;
   const maxLandH = Math.max(heightMax - waterLevel, 0.001);
-  const scale = HEIGHT_SCALE / maxLandH;
   const n = pts.length;
   const positions = new Float32Array(n * 3);
   const colors = new Float32Array(n * 3);
 
   for (let i = 0; i < n; i++) {
     const rawH = heights[i];
-    const y = (rawH - waterLevel) * scale;
+    const y = rawH > waterLevel ? 0.1 : 0.0;
     const normH = (rawH - waterLevel) / maxLandH;
     const b = (tempBand && moisture) ? biomeFromMatrix(normH, tempBand[i], moisture[i]) : (biome ? biome[i] : 0);
     const c = BIOME_COLORS[b] || BIOME_COLORS[0];
@@ -68,18 +67,15 @@ export function buildTerrainMesh(region) {
 }
 
 export function buildRiverMesh(region) {
-  const { pts, heights, waterLevel, heightMax, rivers } = region;
+  const { pts, heights, waterLevel, rivers } = region;
   if (!rivers || !rivers.segments || rivers.segments.length === 0) return null;
-
-  const maxLandH = Math.max(heightMax - waterLevel, 0.001);
-  const scale = HEIGHT_SCALE / maxLandH;
 
   const positions = [];
 
   for (const seg of rivers.segments) {
     const i = seg[0], j = seg[1];
-    const y1 = Math.max(0, (heights[i] - waterLevel) * scale) + 0.03;
-    const y2 = Math.max(0, (heights[j] - waterLevel) * scale) + 0.03;
+    const y1 = heights[i] > waterLevel ? 0.2 : 0.05;
+    const y2 = heights[j] > waterLevel ? 0.2 : 0.05;
 
     positions.push(pts[i][0], y1, pts[i][1]);
     positions.push(pts[j][0], y2, pts[j][1]);
@@ -106,7 +102,6 @@ export function buildSettlements(region, scene) {
 export function buildBiomeViewMesh(region) {
   const { pts, triangles, heights, heightMax, waterLevel, biome } = region;
   const maxLandH = Math.max(heightMax - waterLevel, 0.001);
-  const scale = HEIGHT_SCALE / maxLandH;
   const triCount = triangles.length / 3;
 
   const positions = new Float32Array(triCount * 3 * 3);
@@ -129,7 +124,7 @@ export function buildBiomeViewMesh(region) {
     for (let k = 0; k < 3; k++) {
       const vi = [i0, i1, i2][k];
       const rawH = heights[vi];
-      const y = (rawH - waterLevel) * scale;
+      const y = rawH > waterLevel ? 0.1 : 0.0;
       const pi = idx + k * 3;
       positions[pi] = pts[vi][0];
       positions[pi + 1] = y;

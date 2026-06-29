@@ -70,7 +70,6 @@ export function createScene(canvas, region) {
     const show = !state.biomeView.visible;
     state.biomeView.visible = show;
     state.terrain.visible = !show;
-    document.getElementById('btn-biome').textContent = show ? 'Terrain View' : 'Biome View';
   };
 
   // ---- Mesh feature objects (mountains, forests from meshDev) ----
@@ -83,22 +82,6 @@ const forestGroup = buildMeshForests(region);
 forestGroup.name = 'meshForests';
 scene.add(forestGroup);
 });
-
-// ---- Water plane ----
-const waterGeom = new THREE.PlaneGeometry(320, 320);
-const waterMat = new THREE.MeshPhongMaterial({
-  color: 0x6092c1,
-  shininess: 80,
-  side: THREE.DoubleSide,
-  polygonOffset: true,
-  polygonOffsetFactor: -0.5,
-  polygonOffsetUnits: -1,
-});
-const water = new THREE.Mesh(waterGeom, waterMat);
-water.rotation.x = -Math.PI / 2;
-water.position.y = 0.02;
-water.receiveShadow = true;
-if (!['land', 'lake', 'fjord', 'bay'].includes(region.template)) scene.add(water);
 
 // ---- Clouds (IcosahedronGeometry merged blobs, from proceduralisland) ----
   const cloudGroup = new THREE.Group();
