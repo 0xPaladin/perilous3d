@@ -26,13 +26,14 @@ index.html
     │                      hydraulic erosion → sea-level cut → sink-fill → coast clean →
     │                      template-specific features (inverted depressions)
     ├── 06_coast.js     — Chaikin smoothing (retained, unused by current pipeline)
-    ├── 07_mesher.js    — Delaunay triangles → Three.js indexed BufferGeometry
-    │                      + per-vertex elevation colors (water/beach/grass/forest/mountain/snow)
-    ├── 08_colors.js    — PS terrain palette (legacy, kept for reference)
+     ├── 07_mesher.js    — Delaunay triangles → Three.js indexed BufferGeometry
+    │                      + per-vertex biome colors (Azgaar 5×26 temperature × moisture matrix)
+    │                      + river mesh (LineSegments along downhill edges, width ∝ √flux)
+    │                      + biome view mesh (non-indexed per-triangle colors + wireframe)
+    ├── 08_colors.js    — PS terrain palette (used by mountain & hill tile color palettes)
     ├── 10_renderer.js  — Three.js scene, HemisphereLight + DirectionalLight (shadows),
-    │                      water plane (opaque PlaneGeometry 320×320 at Y=0.02, conditional
-    │                      per template), cloud blobs (IcosahedronGeometry), OrbitControls,
-    │                      render loop with FPS counter
+     │                      cloud blobs (IcosahedronGeometry at Y=80–120), OrbitControls,
+     │                      render loop with FPS counter
     ├── 11_ui.js         — progress overlay, seed display, URL sync
     └── main.js          — bootstrap: seed → buildRegion → createScene → animate
 ```
@@ -54,7 +55,9 @@ Seed → Mulberry32 PRNG → 12000–20000 random points (320×320 km extent)
      → Sea-level cut (quantile per template)
      → Fill sinks → clean coast (remove 1-cell artifacts)
      → Template-specific features (lake basin / fjord trench / bay blob inverted depressions)
-     → Per-vertex heights, indexed mesh, vertex colors by elevation
+     → Rivers (downhill flux accumulation) → Moisture (Azgaar BFS + neighbor averaging)
+     → Temperature (latitudinal + elevation lapse) → Biomes (Azgaar 5×26 matrix)
+     → Per-vertex heights, indexed mesh, vertex colors by biome index
 ```
 
 ### Per-Template Configuration
@@ -74,8 +77,7 @@ Seed → Mulberry32 PRNG → 12000–20000 random points (320×320 km extent)
 
 - Delaunay triangles used directly as geometry (low-poly aesthetic)
 - `flatShading: true` for faceted look
-- Vertex colors mapped by elevation: water → beach → grass → forest → mountain → snow
-- Underwater vertices placed below Y=0; water plane renders at Y=0.02 (island/archipelago/coast/peninsula only)
+- Vertex colors mapped by Azgaar 5×26 biome matrix (temperature × moisture → 13 biome types)
 - HEIGHT_SCALE = 3.5 km max elevation (vertical exaggeration for readability)
 
 ## Running Locally
@@ -105,6 +107,7 @@ https://0xPaladin.github.io/Outlands/?template=island&seed=ABCD1234&mountains=20
 - **OrbitControls**: left-click rotate, right-click pan, scroll to zoom
 - **"New Island"**: generates a new random seed + map (respects mountain slider)
 - **"Reset View"**: snaps camera back to overview
+- **"Biome View"**: toggles between normal terrain colors and flat per-triangle biome cell view with Delaunay wireframe overlay
 - **Mountains slider**: real-time value display, applied on next "New Island"
 
 ## Algorithm Notes
@@ -126,6 +129,18 @@ https://0xPaladin.github.io/Outlands/?template=island&seed=ABCD1234&mountains=20
 - **Fjord**: Narrow gaussian trough (width 3–8 km, length 70–140 km) running from a random edge inward, with a fade toward the inland end. Creates flooded glacial valleys.
 - **Bay**: Wide gaussian blob (radius 35–65 km) placed near a random map edge. Creates a large bay opening.
 - **Land**: No water plane and heights clamped to ≥ 0, producing a full-continent terrain without ocean.
+
+**Rivers** — Downhill flow accumulation on the Delaunay graph (`computeRivers()` in `05_terrain.js`). Each land point starts with unit flow, accumulates downstream via sorted height traversal. Points in the top 10% of accumulated flow become river channels. River segments follow downhill edges between river points and are rendered as blue `LineSegments` slightly above the terrain surface, with width proportional to √flux.
+
+**Moisture** — Azgaar-style two-phase computation (`computeMoisture()` in `05_terrain.js`). Phase A: BFS from rivers (10), ocean (8), and coast-adjacent land (7) with exponential decay (0.94× per hop inland). Phase B: neighbor averaging with river flux bonus (`4 + mean(raw + max(flux/10, 2), neighbors)`). Output range ~4–50, stored in `region.moisture`.
+
+**Temperature** — `computeTemperature()` in `05_terrain.js`. Base temp parameter (±2°C latitudinal gradient, south hot / north cold) with elevation lapse rate (−10°C max). Mapped to Azgaar's 26-band scale: `tempBand = round(clamp(20 − t, 0, 25))`. Stored in `region.temperature` and `region.tempBand`.
+
+**Biomes** — `biomeId()` in `05_terrain.js` uses Azgaar's exact 5×26 biome matrix (5 moisture bands × 26 temperature bands). Overrides: normH < 0 → Marine (0), normH > 0.80 → Glacier (11). Produces 13 biomes: Marine, Hot desert, Cold desert, Savanna, Grassland, Tropical seasonal forest, Temperate deciduous forest, Tropical rainforest, Temperate rainforest, Taiga, Tundra, Glacier, Wetland. Colors looked up via `BIOME_COLORS[13]` array in `07_mesher.js`.
+
+**Forests** — `buildMeshForests()` in `16_mesh_features.js` filters terrain vertices by normalized elevation (0.06–0.55), then applies a biome-index density lookup (`FOREST_DENSITY` array) with a 0.5 survival multiplier. Candidate points are clustered using a centroid-growing algorithm (8 km radius, min 5 per cluster). Each cluster centroid receives an InstancedMesh forest group via `generateForest()` from `15_mesh_tree.js`, which varies tree appearance by dominant biome (Taiga: tall trunk, narrow conical canopy, dark green; Rainforest: tall, large round canopy, deep green; Savanna: short trunk, wide flat canopy, yellow-green; Deciduous: medium, round, includes autumn hues).
+
+**Biome View** — `buildBiomeViewMesh()` in `07_mesher.js` creates a non-indexed per-triangle mesh where each Delaunay triangle is colored flat by its majority biome, overlaid with a 15% opacity wireframe showing cell boundaries. Toggled via the "Biome View" button in the UI.
 
 ## Credits
 

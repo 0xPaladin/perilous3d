@@ -5,9 +5,28 @@ const TRUNK_COLORS = [
   0x8D6E63, 0xA1887F, 0x61443A, 0x4A3728, 0x734B36,
 ];
 
-const LEAF_COLORS = [
-  0x2E7D32, 0x388E3C, 0x43A047, 0x558B2F, 0x33691E,
-  0x8BC34A, 0x689F38, 0x1B5E20, 0x4CAF50, 0x7CB342,
+const LEAF_SAVANNA =      [0x8BC34A, 0x9CCC65, 0xAED581, 0x7CB342, 0x689F38];
+const LEAF_GRASSLAND =    [0x689F38, 0x7CB342, 0x8BC34A, 0x9CCC65, 0x558B2F];
+const LEAF_TROP_SEASONAL =[0x388E3C, 0x43A047, 0x4CAF50, 0x2E7D32, 0x66BB6A];
+const LEAF_TEMP_DECIDUOUS=[0x4CAF50, 0x66BB6A, 0x8BC34A, 0xFFA726, 0xEF6C00];
+const LEAF_RAINFOREST =   [0x1B5E20, 0x2E7D32, 0x004D40, 0x00695C, 0x194D33];
+const LEAF_TAIGA =        [0x2E7D32, 0x33691E, 0x1B5E20, 0x004D40, 0x3E2723];
+const LEAF_WETLAND =      [0x558B2F, 0x689F38, 0x7CB342, 0x4CAF50, 0x33691E];
+
+const BIOME_TREE = [
+  null,                                    // 0 Marine
+  null,                                    // 1 Hot desert
+  null,                                    // 2 Cold desert
+  { leaf: LEAF_SAVANNA,       hMin:0.8, hMax:1.5, cR:1.4, cY:0.4, tFrac:0.25 }, // 3 Savanna
+  { leaf: LEAF_GRASSLAND,     hMin:0.5, hMax:1.2, cR:1.0, cY:0.5, tFrac:0.30 }, // 4 Grassland
+  { leaf: LEAF_TROP_SEASONAL, hMin:1.5, hMax:3.0, cR:1.0, cY:1.0, tFrac:0.35 }, // 5 Trop seasonal
+  { leaf: LEAF_TEMP_DECIDUOUS, hMin:1.5, hMax:3.0, cR:1.1, cY:1.0, tFrac:0.30 }, // 6 Temp deciduous
+  { leaf: LEAF_RAINFOREST,    hMin:2.0, hMax:4.0, cR:1.2, cY:1.0, tFrac:0.30 }, // 7 Trop rainforest
+  { leaf: LEAF_RAINFOREST,    hMin:1.8, hMax:3.5, cR:1.1, cY:1.0, tFrac:0.30 }, // 8 Temp rainforest
+  { leaf: LEAF_TAIGA,         hMin:1.2, hMax:2.5, cR:0.6, cY:1.8, tFrac:0.45 }, // 9 Taiga
+  null,                                    // 10 Tundra
+  null,                                    // 11 Glacier
+  { leaf: LEAF_WETLAND,       hMin:1.0, hMax:2.0, cR:1.0, cY:0.7, tFrac:0.35 }, // 12 Wetland
 ];
 
 function pick(rng, arr) {
@@ -18,8 +37,8 @@ function brown(rng) {
   return new THREE.Color(pick(rng, TRUNK_COLORS));
 }
 
-function green(rng) {
-  return new THREE.Color(pick(rng, LEAF_COLORS));
+function forestLeaf(rng, palette) {
+  return new THREE.Color(pick(rng, palette));
 }
 
 export function generateTree(prng, x, y, z, height, options = {}) {
@@ -116,10 +135,16 @@ export function generateTree(prng, x, y, z, height, options = {}) {
 export function generateForest(prng, cx, cz, count, radius, height, options = {}) {
   if (count === 0) return new THREE.Group();
 
-  const minR = height * 0.035;
-  const maxR = height * 0.05;
-  const baseH = height * 0.25;
-  const baseCR = height * 0.3;
+  const biome = options.biome != null ? Math.min(options.biome, BIOME_TREE.length - 1) : 7;
+  const cfg = BIOME_TREE[biome] || BIOME_TREE[7];
+  const leafPalette = cfg.leaf || LEAF_RAINFOREST;
+
+  const treeHeight = cfg.hMin + prng() * (cfg.hMax - cfg.hMin);
+  const h = treeHeight || height;
+
+  const trunkFrac = cfg.tFrac;
+  const canopyRMult = cfg.cR;
+  const canopyYMult = cfg.cY;
 
   const trunkGeo = new THREE.CylinderGeometry(1, 1, 1, 5, 1);
   const canopyGeo = new THREE.IcosahedronGeometry(1, 2);
@@ -136,10 +161,10 @@ export function generateForest(prng, cx, cz, count, radius, height, options = {}
     const x = cx + Math.cos(a) * r;
     const z = cz + Math.sin(a) * r;
 
-    const trunkH = baseH + prng() * (height * 0.2);
-    const trunkR = minR + prng() * (maxR - minR);
-    const canopyR = baseCR + prng() * (height * 0.2);
-    const canopyY = trunkH + canopyR * 0.3;
+    const trunkH = h * trunkFrac + prng() * (h * 0.15);
+    const trunkR = h * 0.035 + prng() * (h * 0.015);
+    const canopyR = h * 0.3 * canopyRMult + prng() * (h * 0.15);
+    const canopyY = trunkH + canopyR * 0.25 * canopyYMult;
 
     dummy.position.set(x, trunkH / 2, z);
     dummy.scale.set(trunkR * 0.2, trunkH, trunkR);
@@ -147,13 +172,13 @@ export function generateForest(prng, cx, cz, count, radius, height, options = {}
     trunkMesh.setMatrixAt(i, dummy.matrix);
 
     dummy.position.set(x, canopyY, z);
-    dummy.scale.set(canopyR, canopyR, canopyR);
+    dummy.scale.set(canopyR, canopyR * canopyYMult, canopyR);
     dummy.updateMatrix();
     canopyMesh.setMatrixAt(i, dummy.matrix);
 
     tc.copy(brown(prng));
     trunkMesh.setColorAt(i, tc);
-    lc.copy(green(prng));
+    lc.copy(forestLeaf(prng, leafPalette));
     canopyMesh.setColorAt(i, lc);
   }
 

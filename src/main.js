@@ -30,7 +30,7 @@ function generate(template, seedStr, mountainCount) {
 
   let region;
   try {
-    region = buildRegion(template, 55, 55, seed, mountainCount);
+    region = buildRegion(template, 55, 55, seed, mountainCount, 22);
   } catch (e) {
     console.error('terrain generation failed:', e);
     progressPanel.hide();
@@ -68,6 +68,9 @@ function resetCamera() {
 // ---- Init ----
 document.getElementById('btn-new').addEventListener('click', newIsland);
 document.getElementById('btn-lost').addEventListener('click', resetCamera);
+document.getElementById('btn-biome').addEventListener('click', () => {
+  if (sceneState && sceneState.toggleBiomeView) sceneState.toggleBiomeView();
+});
 document.getElementById('mountains-slider').addEventListener('input', function() {
   document.getElementById('mountains-value').textContent = this.value;
 });

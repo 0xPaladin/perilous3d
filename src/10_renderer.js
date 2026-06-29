@@ -41,44 +41,66 @@ export function createScene(canvas, region) {
   sun.shadow.camera.bottom = -200;
   scene.add(sun);
 
-  // ---- Terrain mesh ----
-  import('./07_mesher.js').then(({ buildTerrainMesh, buildTrees, buildSettlements }) => {
-    const terrain = buildTerrainMesh(region);
-    terrain.receiveShadow = true;
-    scene.add(terrain);
+  // ---- Terrain mesh + biome view ----
+  const state = { scene, camera, renderer, controls };
+  let terrainMesh = null;
+  let biomeViewGroup = null;
+
+  import('./07_mesher.js').then(({ buildTerrainMesh, buildRiverMesh, buildBiomeViewMesh, buildTrees, buildSettlements }) => {
+    terrainMesh = buildTerrainMesh(region);
+    terrainMesh.receiveShadow = true;
+    scene.add(terrainMesh);
+
+    const riverMesh = buildRiverMesh(region);
+    if (riverMesh) scene.add(riverMesh);
 
     scene.add(buildTrees(region, scene));
     scene.add(buildSettlements(region, scene));
+
+    biomeViewGroup = buildBiomeViewMesh(region);
+    biomeViewGroup.visible = false;
+    scene.add(biomeViewGroup);
+
+    state.terrain = terrainMesh;
+    state.biomeView = biomeViewGroup;
   });
+
+  state.toggleBiomeView = function() {
+    if (!state.terrain || !state.biomeView) return;
+    const show = !state.biomeView.visible;
+    state.biomeView.visible = show;
+    state.terrain.visible = !show;
+    document.getElementById('btn-biome').textContent = show ? 'Terrain View' : 'Biome View';
+  };
 
   // ---- Mesh feature objects (mountains, forests from meshDev) ----
   import('./16_mesh_features.js').then(({ buildMeshMountains, buildMeshForests }) => {
-    const mountainGroup = buildMeshMountains(region);
-    mountainGroup.name = 'meshMountains';
-    scene.add(mountainGroup);
+const mountainGroup = buildMeshMountains(region);
+mountainGroup.name = 'meshMountains';
+scene.add(mountainGroup);
 
-    const forestGroup = buildMeshForests(region);
-    forestGroup.name = 'meshForests';
-    scene.add(forestGroup);
-  });
+const forestGroup = buildMeshForests(region);
+forestGroup.name = 'meshForests';
+scene.add(forestGroup);
+});
 
-  // ---- Water plane ----
-  const waterGeom = new THREE.PlaneGeometry(320, 320);
-  const waterMat = new THREE.MeshPhongMaterial({
-    color: 0x6092c1,
-    shininess: 80,
-    side: THREE.DoubleSide,
-    polygonOffset: true,
-    polygonOffsetFactor: -0.5,
-    polygonOffsetUnits: -1,
-  });
-  const water = new THREE.Mesh(waterGeom, waterMat);
-  water.rotation.x = -Math.PI / 2;
-  water.position.y = 0.02;
-  water.receiveShadow = true;
-  if (!['land', 'lake', 'fjord', 'bay'].includes(region.template)) scene.add(water);
+// ---- Water plane ----
+const waterGeom = new THREE.PlaneGeometry(320, 320);
+const waterMat = new THREE.MeshPhongMaterial({
+  color: 0x6092c1,
+  shininess: 80,
+  side: THREE.DoubleSide,
+  polygonOffset: true,
+  polygonOffsetFactor: -0.5,
+  polygonOffsetUnits: -1,
+});
+const water = new THREE.Mesh(waterGeom, waterMat);
+water.rotation.x = -Math.PI / 2;
+water.position.y = 0.02;
+water.receiveShadow = true;
+if (!['land', 'lake', 'fjord', 'bay'].includes(region.template)) scene.add(water);
 
-  // ---- Clouds (IcosahedronGeometry merged blobs, from proceduralisland) ----
+// ---- Clouds (IcosahedronGeometry merged blobs, from proceduralisland) ----
   const cloudGroup = new THREE.Group();
   cloudGroup.name = 'clouds';
   const cloudMat = new THREE.MeshPhongMaterial({
@@ -106,7 +128,7 @@ export function createScene(canvas, region) {
     }
     cloud.position.set(
       (Math.random() - 0.5) * 500,
-      3 + Math.random() * 3,
+      80 + Math.random() * 40,
       (Math.random() - 0.5) * 500
     );
     cloud.scale.setScalar(10 + Math.random() * 20);
@@ -122,7 +144,7 @@ export function createScene(canvas, region) {
     renderer.setSize(w, h);
   });
 
-  return { scene, camera, renderer, controls, water };
+  return state;
 }
 
 export function animate({ scene, camera, renderer, controls }) {

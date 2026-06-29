@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { generateMountainTile, createMountainTileMesh } from './13_mesh_mountain.js';
+import { generateHillTile, createTerrainTileMesh, HILL_PALETTE } from './14_mesh_terrain.js';
 import { generateForest } from './15_mesh_tree.js';
 
 function mulberry32(seed) {
@@ -28,92 +29,120 @@ function findNearestHeight(x, z, pts, heights) {
   return bestH;
 }
 
-function sampleTerrainHeight(pts, heights, waterLevel, heightMax) {
-  const maxLandH = Math.max(heightMax - waterLevel, 0.001);
-  const HEIGHT_SCALE = 3.5;
-  const s = HEIGHT_SCALE / maxLandH;
-  return (x, z) => {
-    const rawH = findNearestHeight(x, z, pts, heights);
-    return Math.max(0, (rawH - waterLevel) * s);
-  };
-}
+const HILL_THRESHOLD = 0.65;
+const HEIGHT_SCALE = 3.5;
 
 export function buildMeshMountains(region) {
   const { pts, heights, mounts, waterLevel, heightMax, seed } = region;
   const group = new THREE.Group();
   if (!mounts || mounts.length === 0) return group;
 
-  const getY = sampleTerrainHeight(pts, heights, waterLevel, heightMax);
+  const maxLandH = Math.max(heightMax - waterLevel, 0.001);
 
   for (let i = 0; i < mounts.length; i++) {
     const m = mounts[i];
     const mSeed = ((seed * 9301 + i * 49297 + 77777) % 233280) | 0;
     const prng = mulberry32(mSeed);
 
+    const rawH = findNearestHeight(m.x, m.y, pts, heights);
+    const normH = Math.max(0, rawH - waterLevel) / maxLandH;
+
     const tileH = Math.max(0.5, m.r * 0.8);
-    const tile = generateMountainTile(prng, 0, 0, tileH, 10);
-    const mesh = createMountainTileMesh(tile, tileH);
+    const xyScale = m.r / HEIGHT_SCALE;
 
-    const xyScale = m.r / 3.5;
-    const yScale = m.r * 0.35;
-    mesh.scale.set(xyScale, yScale, xyScale);
-
-    const yy = getY(m.x, m.y);
-    mesh.position.set(m.x, yy, m.y);
-
-    group.add(mesh);
+    if (normH > HILL_THRESHOLD) {
+      const tile = generateMountainTile(prng, 0, 0, tileH, 10);
+      const mesh = createMountainTileMesh(tile, tileH);
+      const yScale = m.r * 0.35;
+      mesh.scale.set(xyScale, yScale, xyScale);
+      mesh.position.set(m.x, 0.0, m.y);
+      group.add(mesh);
+    } else {
+      const tile = generateHillTile(prng, 0, 0, tileH, 10);
+      const mesh = createTerrainTileMesh(tile, tileH, HILL_PALETTE);
+      const yScale = m.r * 0.18;
+      mesh.scale.set(xyScale, yScale, xyScale);
+      mesh.position.set(m.x, 0.0, m.y);
+      group.add(mesh);
+    }
   }
 
   return group;
 }
 
-export function buildMeshForests(region) {
-  const { pts, heights, waterLevel, heightMax, seed } = region;
-  const group = new THREE.Group();
-  if (!pts) return group;
+const FOREST_DENSITY = [0, 0, 0, 0.3, 0.25, 0.7, 0.7, 1.0, 1.0, 0.6, 0.05, 0, 0.4];
 
-  const getY = sampleTerrainHeight(pts, heights, waterLevel, heightMax);
+export function buildMeshForests(region) {
+  const { pts, heights, waterLevel, heightMax, biome, seed } = region;
+  const group = new THREE.Group();
+  if (!pts || !biome) return group;
+
   const maxLandH = Math.max(heightMax - waterLevel, 0.001);
 
   const candidatePoints = [];
+  const candidateBiomes = [];
   for (let i = 0; i < pts.length; i++) {
     const rawH = heights[i] - waterLevel;
     if (rawH <= 0.01) continue;
     const normH = rawH / maxLandH;
-    if (normH < 0.06 || normH > 0.55) continue;
+    if (normH > 0.80) continue;
 
-    const density = normH < 0.35 ? 1 : (normH < 0.5 ? 0.6 : 0.2);
-    if (hashFloat(pts[i][0], pts[i][1], seed) < density * 0.15) {
+    const b = biome[i];
+    const density = FOREST_DENSITY[b] || 0;
+
+    if (density > 0 && hashFloat(pts[i][0], pts[i][1], seed) < density * 0.5) {
       candidatePoints.push(pts[i]);
+      candidateBiomes.push(b);
     }
   }
 
   const CLUSTER_RADIUS = 8;
-  const MIN_CLUSTER_SIZE = 8;
+  const MIN_CLUSTER_SIZE = 5;
   const forestClusters = [];
   const used = new Uint8Array(candidatePoints.length);
 
   for (let i = 0; i < candidatePoints.length; i++) {
     if (used[i]) continue;
-    const cx = candidatePoints[i][0], cy = candidatePoints[i][1];
     const cluster = [i];
     used[i] = 1;
-    for (let j = i + 1; j < candidatePoints.length; j++) {
-      if (used[j]) continue;
-      const dx = candidatePoints[j][0] - cx, dy = candidatePoints[j][1] - cy;
-      if (dx * dx + dy * dy < CLUSTER_RADIUS * CLUSTER_RADIUS) {
-        cluster.push(j);
-        used[j] = 1;
+    let cx = candidatePoints[i][0], cy = candidatePoints[i][1];
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (let j = 0; j < candidatePoints.length; j++) {
+        if (used[j]) continue;
+        const dx = candidatePoints[j][0] - cx, dy = candidatePoints[j][1] - cy;
+        if (dx * dx + dy * dy < CLUSTER_RADIUS * CLUSTER_RADIUS) {
+          used[j] = 1;
+          cluster.push(j);
+          let sumX = 0, sumZ = 0;
+          for (const idx of cluster) { sumX += candidatePoints[idx][0]; sumZ += candidatePoints[idx][1]; }
+          cx = sumX / cluster.length;
+          cy = sumZ / cluster.length;
+          changed = true;
+        }
       }
     }
     if (cluster.length >= MIN_CLUSTER_SIZE) {
       let sumX = 0, sumZ = 0;
-      for (const idx of cluster) { sumX += candidatePoints[idx][0]; sumZ += candidatePoints[idx][1]; }
+      const biomeCounts = {};
+      for (const idx of cluster) {
+        sumX += candidatePoints[idx][0];
+        sumZ += candidatePoints[idx][1];
+        const b = candidateBiomes[idx];
+        biomeCounts[b] = (biomeCounts[b] || 0) + 1;
+      }
+      let dominantBiome = 4;
+      let maxCount = 0;
+      for (const b in biomeCounts) {
+        if (biomeCounts[b] > maxCount) { maxCount = biomeCounts[b]; dominantBiome = parseInt(b); }
+      }
       forestClusters.push({
         cx: sumX / cluster.length,
         cz: sumZ / cluster.length,
         count: Math.min(cluster.length * 2, 120),
         radius: Math.sqrt(cluster.length) * 1.5,
+        biome: dominantBiome,
       });
     }
   }
@@ -122,9 +151,8 @@ export function buildMeshForests(region) {
     const fc = forestClusters[ci];
     const fSeed = ((seed * 73 + ci * 131 + 12345) % 233280) | 0;
     const prng = mulberry32(fSeed);
-    const yy = getY(fc.cx, fc.cz);
-    const forest = generateForest(prng, fc.cx, fc.cz, fc.count, fc.radius, 1.5 + prng() * 1.5);
-    forest.position.y = yy;
+    const forest = generateForest(prng, fc.cx, fc.cz, fc.count, fc.radius, 1.5 + prng() * 1.5, { biome: fc.biome });
+    forest.position.y = 0.1;
     group.add(forest);
   }
 

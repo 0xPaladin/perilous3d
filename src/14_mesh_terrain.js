@@ -1,17 +1,25 @@
 import * as THREE from "three";
+import { TERRAIN, TERRAIN_COLORS } from './08_colors.js';
 
-const HILL_PALETTE = [
-  new THREE.Color(0x4a7c3f), new THREE.Color(0x5a8f4c),
-  new THREE.Color(0x6ba359), new THREE.Color(0x7cb86a),
-  new THREE.Color(0x8fbc6a), new THREE.Color(0xa8c97a),
-  new THREE.Color(0xc4b87a),
+const tc = t => TERRAIN_COLORS[t];
+
+export const HILL_PALETTE = [
+  new THREE.Color(...tc(TERRAIN.GRASS)),
+  new THREE.Color(...tc(TERRAIN.WOOD_LIGHT)),
+  new THREE.Color(...tc(TERRAIN.WOOD_DARK)),
+  new THREE.Color(...tc(TERRAIN.SWAMP)),
+  new THREE.Color(...tc(TERRAIN.WOOD_DEAD)),
+  new THREE.Color(...tc(TERRAIN.MOUNTAIN)),
 ];
 
-const DUNE_PALETTE = [
-  new THREE.Color(0xf0e0b8), new THREE.Color(0xe8d5a3),
-  new THREE.Color(0xdcc48a), new THREE.Color(0xd4b87a),
-  new THREE.Color(0xc9a86a), new THREE.Color(0xb89455),
-  new THREE.Color(0xa87d45),
+export const DUNE_PALETTE = [
+  new THREE.Color(...tc(TERRAIN.BEACH)),
+  new THREE.Color(...tc(TERRAIN.DESERT)),
+  new THREE.Color(...tc(TERRAIN.DESERT)),
+  new THREE.Color(...tc(TERRAIN.WOOD_DEAD)),
+  new THREE.Color(...tc(TERRAIN.WOOD_DEAD)),
+  new THREE.Color(...tc(TERRAIN.MOUNTAIN)),
+  new THREE.Color(...tc(TERRAIN.MOUNTAIN)),
 ];
 
 function heightColor(h, palette) {

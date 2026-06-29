@@ -1,11 +1,14 @@
 import * as THREE from "three";
+import { TERRAIN, TERRAIN_COLORS } from './08_colors.js';
+
+const tc = t => TERRAIN_COLORS[t];
 
 const HEIGHT_COLORS = {
-  deep:    new THREE.Color(0x3a6b35),
-  low:     new THREE.Color(0x4a8c3f),
-  mid:     new THREE.Color(0x8b7355),
-  high:    new THREE.Color(0x7a7a7a),
-  peak:    new THREE.Color(0xd8dce6),
+  deep:    new THREE.Color(...tc(TERRAIN.WOOD_DARK)),
+  low:     new THREE.Color(...tc(TERRAIN.WOOD_LIGHT)),
+  mid:     new THREE.Color(...tc(TERRAIN.WOOD_DEAD)),
+  high:    new THREE.Color(...tc(TERRAIN.MOUNTAIN)),
+  peak:    new THREE.Color(...tc(TERRAIN.DESERT)),
   snow:    new THREE.Color(0xf0f4ff),
 };
 
