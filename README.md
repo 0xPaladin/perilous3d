@@ -24,8 +24,9 @@ index.html
     ├── 04_raisers.js   — Skeleton/midpoint-displacement raisers (retained, unused)
     ├── 05_terrain.js   — full pipeline: Delaunay mesh → cartoon mountains (parabolic cones
     │                      + Gaussian ground skirts) → island mask → peaky transform →
-    │                      hydraulic erosion → sea-level cut → sink-fill → coast clean →
-    │                      template-specific features (inverted depressions)
+    │                      hydraulic erosion → fjord trench carve → sea-level cut →
+    │                      sink-fill → coast clean → template-specific features
+    │                      (inverted depressions: lake basin / bay blob)
     ├── 06_coast.js     — Chaikin smoothing (retained, unused by current pipeline)
      ├── 07_mesher.js    — Delaunay triangles → Three.js indexed BufferGeometry
     │                      + per-vertex biome colors (Azgaar 5×26 temperature × moisture matrix)
@@ -54,9 +55,10 @@ Seed → Mulberry32 PRNG → 12000–20000 random points (320×320 km extent)
      → Island mask (smoothstep + angular perturbation, per-template radius/offset)
      → Normalize [0,1] → sqrt (peaky)
      → 8× hydraulic erosion (flux + slope → fill sinks)
+     → Fjord trench carve (before sea-level, always below water cutoff)
      → Sea-level cut (quantile per template)
      → Fill sinks → clean coast (remove 1-cell artifacts)
-     → Template-specific features (lake basin / fjord trench / bay blob inverted depressions)
+     → Template-specific features (lake basin / bay blob inverted depressions)
      → Rivers (downhill flux accumulation) → Moisture (Azgaar BFS + neighbor averaging)
      → Temperature (latitudinal + elevation lapse) → Biomes (Azgaar 5×26 matrix)
      → Per-vertex heights, indexed mesh, vertex colors by biome index
@@ -68,12 +70,10 @@ Seed → Mulberry32 PRNG → 12000–20000 random points (320×320 km extent)
 |--------------|---------------|-----------------|-----------|
 | `island`     | 0.40 | 2–4 moderate ranges | Jagged circular island |
 | `archipelago`| 0.55 | 4–6 short narrow ranges | Small broken islands |
-| `bay`        | 0.08 | 1–3 long heavy ranges | Full map, bay indentation on south side |
-| `coast`      | 0.30 | 1–3 long ranges, concentrated | Mostly land, open to south |
-| `fjord`      | 0.06 | 3–5 very narrow ranges | Full map, deep narrow fjord cuts |
-| `peninsula`  | 0.42 | 1–2 central spine ranges | Landmass extends east, water on 3 sides |
-| `lake`       | 0.05 | 2–4 ranges ringing center | Full map, central lake basin |
-| `land`       | 0.00 | 3–6 big continental belts | Full continent, no ocean |
+| `bay`        | 0.005 | 1–3 long heavy ranges | Full land except bay blob from random edge |
+| `fjord`      | 0.01  | 3–5 very narrow ranges | Full land except fjord trench from random edge |
+| `lake`       | 0.005 | 2–4 ranges ringing center | Full land except central lake basin |
+| `land`       | 0.00 | 3–6 big continental belts | Fully continental, no water |
 
 ### 3D Mesh
 
@@ -100,7 +100,7 @@ https://0xPaladin.github.io/Outlands/?template=island&seed=ABCD1234&mountains=20
 
 | Param      | Values                    | Description                              |
 |------------|---------------------------|------------------------------------------|
-| `template` | `island`, `archipelago`, `bay`, `coast`, `fjord`, `peninsula`, `lake`, `land` | Map template (affects sea level) |
+| `template` | `island`, `archipelago`, `bay`, `fjord`, `lake`, `land` | Map template (affects sea level) |
 | `seed`     | any URL-safe string        | Deterministic map seed                   |
 | `mountains` | 0–500                    | Number of mountain peaks                 |
 | `temp`     | 0–35                      | Base temperature in °C                   |
@@ -128,11 +128,11 @@ https://0xPaladin.github.io/Outlands/?template=island&seed=ABCD1234&mountains=20
 
 **Coast Cleaning** — Two-pass removal of single-cell land/water artifacts on the boundary (3-neighbor triangles).
 
-**Template-Specific Features** — After coast cleaning, certain templates get inverted gaussian depressions pushed below sea level:
-- **Lake**: Broad gaussian basin near the map center (radius 25–50 km, depth 0.25–0.5) creates an inland lake.
-- **Fjord**: Narrow gaussian trough (width 3–8 km, length 70–140 km) running from a random edge inward, with a fade toward the inland end. Creates flooded glacial valleys.
-- **Bay**: Wide gaussian blob (radius 35–65 km) placed near a random map edge. Creates a large bay opening.
-- **Land**: No water plane and heights clamped to ≥ 0, producing a full-continent terrain without ocean.
+**Template-Specific Features** — Bay, Fjord, Lake, and Land use a full-coverage island mask (no angular clipping), so only their named features create water:
+- **Lake**: Broad gaussian basin near the map center (radius 25–50 km, depth 0.25–0.5) pushed below sea level to form an inland lake.
+- **Fjord**: Carved *before* the sea-level cut so the trench always reaches below the water cutoff. A linear Gaussian trench (len 80–180 km, width 6–16 km, depth 0.3–0.6) starting from a random map edge, creating flooded glacial valleys.
+- **Bay**: Wide gaussian blob (radius 35–65 km, depth 0.2–0.4) placed near a random map edge. Creates a large bay opening.
+- **Land**: No carve; heights are clamped to ≥ 0 (no cells at exactly 0), producing a fully continental terrain without ocean.
 
 **Rivers** — Downhill flow accumulation on the Delaunay graph (`computeRivers()` in `05_terrain.js`). Each land point starts with unit flow, accumulates downstream via sorted height traversal. Points in the top 10% of accumulated flow become river channels. River segments follow downhill edges between river points and are rendered as blue `LineSegments` slightly above the terrain surface, with width proportional to √flux.
 

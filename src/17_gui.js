@@ -30,7 +30,7 @@ export function initGUI({ app, generate, initialTemplate, initialMountains, init
   };
 
   const templateFolder = gui.addFolder('Template');
-  templateFolder.add(options, 'template', ['island', 'archipelago', 'bay', 'fjord', 'peninsula', 'lake', 'land'])
+  templateFolder.add(options, 'template', ['island', 'archipelago', 'bay', 'fjord', 'lake', 'land'])
     .name('Template');
 
   const paramsFolder = gui.addFolder('Parameters');
@@ -38,17 +38,21 @@ export function initGUI({ app, generate, initialTemplate, initialMountains, init
   paramsFolder.add(options, 'baseTemp', 0, 35, 1).name('Base Temp');
 
   const actionsFolder = gui.addFolder('Actions');
-  actionsFolder.add({ fn: () => {
-    const seed = Math.random().toString(36).substring(2, 10) + Date.now().toString(36);
-    generate(options.template, seed, options.mountains, options.baseTemp);
-  }}, 'fn').name('New Island');
+  actionsFolder.add({
+    fn: () => {
+      const seed = Math.random().toString(36).substring(2, 10) + Date.now().toString(36);
+      generate(options.template, seed, options.mountains, options.baseTemp);
+    }
+  }, 'fn').name('New Region');
 
-  actionsFolder.add({ fn: () => {
-    if (!app.sceneState) return;
-    app.sceneState.camera.position.set(0, 120, 260);
-    app.sceneState.controls.target.set(0, 0, 0);
-    app.sceneState.controls.update();
-  }}, 'fn').name('Reset View');
+  actionsFolder.add({
+    fn: () => {
+      if (!app.sceneState) return;
+      app.sceneState.camera.position.set(0, 120, 260);
+      app.sceneState.controls.target.set(0, 0, 0);
+      app.sceneState.controls.update();
+    }
+  }, 'fn').name('Reset View');
 
   actionsFolder.add(biomeProxy, 'value').name('Biome View');
 

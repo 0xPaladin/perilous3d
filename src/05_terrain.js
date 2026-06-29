@@ -82,8 +82,7 @@ function mountains(pts, extent, n, rng, template) {
     archipelago: { ranges: [4, 6], len: [15, 60], width: [2, 8], outlier: 0.10, spread: 0.35 },
     bay: { ranges: [1, 3], len: [50, 140], width: [6, 20], outlier: 0.10, spread: 0.20 },
     fjord: { ranges: [3, 5], len: [40, 100], width: [2, 6], outlier: 0.08, spread: 0.20 },
-    peninsula: { ranges: [1, 2], len: [60, 150], width: [3, 10], outlier: 0.10, spread: 0.15 },
-    lake: { ranges: [2, 4], len: [40, 120], width: [4, 14], outlier: 0.10, spread: 0.25 },
+    lake:        { ranges: [2, 4], len: [40, 120], width: [4, 14],  outlier: 0.10, spread: 0.25 },
     land: { ranges: [3, 6], len: [80, 200], width: [8, 28], outlier: 0.20, spread: 0.35 },
   };
   const c = configs[template] || configs.island;
@@ -541,7 +540,7 @@ export function buildRegion(template, cols, rows, seed, mountainCount, baseTemp 
     archipelago: { radius: 0.32, offX: 0, offY: 0, amp: [0.30, 0.18, 0.10, 0.05] },
     bay: { radius: 5.00, offX: 0, offY: 0, amp: [0, 0, 0, 0] },
     fjord: { radius: 5.00, offX: 0, offY: 0, amp: [0, 0, 0, 0] },
-    peninsula: { radius: 0.55, offX: 0.22, offY: 0, amp: [0.18, 0.10, 0.05, 0.02] },
+
     lake: { radius: 5.00, offX: 0, offY: 0, amp: [0, 0, 0, 0] },
     land: { radius: 5.00, offX: 0, offY: 0, amp: [0, 0, 0, 0] },
   };
@@ -568,6 +567,17 @@ export function buildRegion(template, cols, rows, seed, mountainCount, baseTemp 
   h = peaky(h);
   h = doErosion(h, runif(0.02, 0.12, rng), 8, adj, pts, extent);
 
+  // Island/archipelago: force map-edge cells to 0 so edges are always water
+  if (template === 'island' || template === 'archipelago') {
+    const margin = extent.width * 0.01;
+    const half = extent.width / 2;
+    for (let i = 0; i < pts.length; i++) {
+      if (Math.abs(pts[i][0]) > half - margin || Math.abs(pts[i][1]) > half - margin) {
+        h[i] = 0;
+      }
+    }
+  }
+
   // Fjord carved before sea-level so the trench is reliably below water cutoff
   if (template === 'fjord') {
     const edge = Math.floor(rng() * 4);
@@ -590,7 +600,7 @@ export function buildRegion(template, cols, rows, seed, mountainCount, baseTemp 
     }
   }
 
-  const waterQuantile = { island: 0.40, archipelago: 0.55, fjord: 0.01, lake: 0.005, bay: 0.005, peninsula: 0.42, land: 0.00 };
+  const waterQuantile = { island: 0.40, archipelago: 0.55, fjord: 0.01, lake: 0.005, bay: 0.005, land: 0.00 };
   const wq = waterQuantile[template] || 0.35;
   h = setSeaLevel(h, wq);
   h = fillSinks(h, adj, pts, extent);
