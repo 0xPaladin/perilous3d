@@ -645,6 +645,76 @@ function findTowns(cities, pts, heights, waterLevel, habitability, nearWater, ne
   return towns;
 }
 
+function findRuins(pts, heights, waterLevel, habitability, cities, towns, count, rngSeed) {
+  const rng = createRng(rngSeed ^ 0xDADE);
+  const minDistSq = 30 * 30;
+  const farSq = 60 * 60;
+  const ruins = [];
+  const n = Math.max(2, Math.min(4, count + 2));
+  const occupied = (x, z) => {
+    for (const s of [...cities, ...towns]) {
+      const dx = x - s.x, dz = z - s.z;
+      if (dx * dx + dz * dz < minDistSq * 2) return true;
+    }
+    return false;
+  };
+  const nearSettlement = (x, z) => {
+    for (const s of [...cities, ...towns]) {
+      const dx = x - s.x, dz = z - s.z;
+      if (dx * dx + dz * dz < farSq) return true;
+    }
+    return false;
+  };
+
+  const landCells = [];
+  for (let i = 0; i < pts.length; i++) {
+    if (heights[i] <= waterLevel) continue;
+    const x = pts[i][0], z = pts[i][1];
+    if (occupied(x, z)) continue;
+    if (!nearSettlement(x, z)) continue;
+    landCells.push({ idx: i, score: habitability[i] + rng() * 10 });
+  }
+  landCells.sort((a, b) => b.score - a.score);
+
+  for (const c of landCells) {
+    if (ruins.length >= n) break;
+    const cx = pts[c.idx][0], cz = pts[c.idx][1];
+    let ok = true;
+    for (const r of ruins) {
+      const dx = cx - r.x, dz = cz - r.z;
+      if (dx * dx + dz * dz < minDistSq) { ok = false; break; }
+    }
+    if (ok) ruins.push({ x: cx, z: cz, idx: c.idx, habitability: c.score });
+  }
+
+  return ruins;
+}
+
+function findMinorRuins(pts, heights, waterLevel, count, rngSeed) {
+  const rng = createRng(rngSeed ^ 0xDEAD);
+  const minDistSq = 20 * 20;
+  const n = 4 + Math.floor(rng() * 6) + 1;
+  const minorRuins = [];
+
+  const landCells = [];
+  for (let i = 0; i < pts.length; i++) {
+    if (heights[i] > waterLevel) landCells.push(i);
+  }
+
+  for (let attempt = 0; attempt < n * 20 && minorRuins.length < n; attempt++) {
+    const idx = landCells[Math.floor(rng() * landCells.length)];
+    const x = pts[idx][0], z = pts[idx][1];
+    let ok = true;
+    for (const r of minorRuins) {
+      const dx = x - r.x, dz = z - r.z;
+      if (dx * dx + dz * dz < minDistSq) { ok = false; break; }
+    }
+    if (ok) minorRuins.push({ x, z, idx });
+  }
+
+  return minorRuins;
+}
+
 const RESOURCE_TYPES = [
   'game/hide/fur',
   'timber/clay',
@@ -863,6 +933,8 @@ export function buildRegion(template, cols, rows, seed, mountainCount, baseTemp 
   const nearResource = computeNearResource(pts, resources, 15);
   const cities = findCities(pts, h, waterLevel, habitability, nearWater, nearResource, cityCount, seed ^ 0xCAFE);
   const towns = findTowns(cities, pts, h, waterLevel, habitability, nearWater, nearResource, cityCount, seed ^ 0xFEED);
+  const ruins = findRuins(pts, h, waterLevel, habitability, cities, towns, cityCount, seed ^ 0xDADE);
+  const minorRuins = findMinorRuins(pts, h, waterLevel, cityCount, seed ^ 0xABCD);
 
   return {
     pts,
@@ -889,5 +961,7 @@ export function buildRegion(template, cols, rows, seed, mountainCount, baseTemp 
     cities,
     towns,
     resources,
+    ruins,
+    minorRuins,
   };
 }

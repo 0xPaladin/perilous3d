@@ -138,6 +138,34 @@ export function buildSettlements(region) {
   if (cities && cities.length) for (const c of cities) addCity(c.x, c.z);
   if (towns && towns.length) for (const t of towns) addTown(t.x, t.z);
 
+  const ruinMat = new THREE.MeshLambertMaterial({ color: 0x888899 });
+  if (region.ruins && region.ruins.length) {
+    for (const r of region.ruins) {
+      const n = 3 + Math.floor(Math.random() * 3);
+      for (let i = 0; i < n; i++) {
+        const h = 0.4 + Math.random() * 0.8;
+        const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.25 + Math.random() * 0.2, 0.3 + Math.random() * 0.2, h, 6), ruinMat);
+        const angle = (i / n) * Math.PI * 2;
+        const dist = 0.6 + Math.random() * 1.2;
+        pillar.position.set(r.x + Math.cos(angle) * dist, h / 2, r.z + Math.sin(angle) * dist);
+        pillar.rotation.y = Math.random() * Math.PI;
+        pillar.castShadow = true;
+        group.add(pillar);
+      }
+    }
+  }
+
+  const obeliskMat = new THREE.MeshLambertMaterial({ color: 0x888899 });
+  if (region.minorRuins && region.minorRuins.length) {
+    for (const r of region.minorRuins) {
+      const obelisk = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.4, 3.5, 6), obeliskMat);
+      const terrainY = heights[r.idx] > waterLevel ? 0.1 : 0.0;
+      obelisk.position.set(r.x, terrainY + 1.75, r.z);
+      obelisk.castShadow = true;
+      group.add(obelisk);
+    }
+  }
+
   return group;
 }
 

@@ -148,7 +148,9 @@ export function buildMeshForests(region) {
   }
 
   const settlements = (region.cities || []).concat(region.towns || []);
+  const RUIN_RADIUS_SQ = 5 * 5;
   const CLEAR_RADIUS_SQ = 5 * 5;
+  const MINOR_RUIN_RADIUS_SQ = 3 * 3;
 
   for (let ci = 0; ci < forestClusters.length; ci++) {
     const fc = forestClusters[ci];
@@ -157,6 +159,18 @@ export function buildMeshForests(region) {
     for (const s of settlements) {
       const dx = fc.cx - s.x, dz = fc.cz - s.z;
       if (dx * dx + dz * dz < CLEAR_RADIUS_SQ) { obstructed = true; break; }
+    }
+    if (!obstructed && region.ruins) {
+      for (const r of region.ruins) {
+        const dx = fc.cx - r.x, dz = fc.cz - r.z;
+        if (dx * dx + dz * dz < RUIN_RADIUS_SQ) { obstructed = true; break; }
+      }
+    }
+    if (!obstructed && region.minorRuins) {
+      for (const r of region.minorRuins) {
+        const dx = fc.cx - r.x, dz = fc.cz - r.z;
+        if (dx * dx + dz * dz < MINOR_RUIN_RADIUS_SQ) { obstructed = true; break; }
+      }
     }
     if (obstructed) continue;
 

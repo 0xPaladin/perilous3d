@@ -75,6 +75,8 @@ function logRegionStats(region) {
   console.log('Cities:', region.cities || []);
   console.log('Towns:', region.towns || []);
   console.log('Resources:', region.resources || []);
+  console.log('Ruins:', region.ruins || []);
+  console.log('Minor Ruins:', region.minorRuins || []);
 }
 
 // Load URL seed or generate new
