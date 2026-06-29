@@ -715,6 +715,54 @@ function findMinorRuins(pts, heights, waterLevel, count, rngSeed) {
   return minorRuins;
 }
 
+function findTrouble(pts, heights, waterLevel, habitability, cities, towns, resources, ruins, safety, rngSeed) {
+  const rng = createRng(rngSeed ^ 0xEED);
+  const trouble = [];
+
+  for (const res of resources) {
+    const candidates = [];
+    for (let i = 0; i < pts.length; i++) {
+      if (heights[i] <= waterLevel) continue;
+      const dx = pts[i][0] - res.x, dz = pts[i][1] - res.z;
+      if (dx * dx + dz * dz > 20 * 20) continue;
+      candidates.push({ idx: i, score: -habitability[i] });
+    }
+    candidates.sort((a, b) => a.score - b.score);
+    if (candidates.length > 0) {
+      const c = candidates[0];
+      trouble.push({ x: pts[c.idx][0], z: pts[c.idx][1], idx: c.idx, type: 'resource' });
+    }
+  }
+
+  const additional = (3 - safety) * 2;
+  const halfNear = Math.floor(additional / 2);
+
+  for (let k = 0; k < halfNear; k++) {
+    const candidates = [];
+    for (const s of [...cities, ...towns]) {
+      for (let i = 0; i < pts.length; i++) {
+        if (heights[i] <= waterLevel) continue;
+        const dx = pts[i][0] - s.x, dz = pts[i][1] - s.z;
+        if (dx * dx + dz * dz > 30 * 30) continue;
+        candidates.push({ idx: i, score: -habitability[i] });
+      }
+    }
+    candidates.sort((a, b) => a.score - b.score);
+    if (candidates.length > 0) {
+      const c = candidates[k % candidates.length];
+      trouble.push({ x: pts[c.idx][0], z: pts[c.idx][1], idx: c.idx, type: 'settlement' });
+    }
+  }
+
+  const halfRuins = additional - halfNear;
+  for (let k = 0; k < halfRuins && k < ruins.length; k++) {
+    const r = ruins[k % ruins.length];
+    trouble.push({ x: r.x, z: r.z, idx: r.idx, type: 'ruin' });
+  }
+
+  return trouble;
+}
+
 const RESOURCE_TYPES = [
   'game/hide/fur',
   'timber/clay',
@@ -935,6 +983,7 @@ export function buildRegion(template, cols, rows, seed, mountainCount, baseTemp 
   const towns = findTowns(cities, pts, h, waterLevel, habitability, nearWater, nearResource, cityCount, seed ^ 0xFEED);
   const ruins = findRuins(pts, h, waterLevel, habitability, cities, towns, cityCount, seed ^ 0xDADE);
   const minorRuins = findMinorRuins(pts, h, waterLevel, cityCount, seed ^ 0xABCD);
+  const trouble = findTrouble(pts, h, waterLevel, habitability, cities, towns, resources, ruins, cityCount, seed ^ 0xDEAD);
 
   return {
     pts,
@@ -963,5 +1012,6 @@ export function buildRegion(template, cols, rows, seed, mountainCount, baseTemp 
     resources,
     ruins,
     minorRuins,
+    trouble,
   };
 }

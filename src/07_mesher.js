@@ -96,7 +96,7 @@ export function buildTrees(region, scene) {
 }
 
 export function buildSettlements(region) {
-  const { cities, towns } = region;
+  const { cities, towns, ruins, minorRuins, heights, waterLevel } = region;
   const group = new THREE.Group();
   group.name = 'settlements';
 
@@ -223,6 +223,27 @@ export function buildBiomeViewMesh(region) {
   group.name = 'biomeViewGroup';
   group.add(mesh);
   group.add(wireframe);
+
+  return group;
+}
+
+export function buildTrouble(region) {
+  const { trouble, heights, waterLevel } = region;
+  const group = new THREE.Group();
+  group.name = 'trouble';
+  if (!trouble || trouble.length === 0) return group;
+
+  const mat = new THREE.MeshLambertMaterial({ color: 0xcc2222 });
+  for (const t of trouble) {
+    const terrainY = heights[t.idx] > waterLevel ? 0.1 : 0.0;
+    const pyramid = new THREE.Mesh(new THREE.ConeGeometry(0.8, 1.5, 4), mat);
+    pyramid.position.set(t.x, terrainY + 0.5, t.z);
+    pyramid.rotation.x = Math.PI;
+    pyramid.rotation.y = Math.PI / 4;
+    pyramid.name = 'trouble';
+    pyramid.castShadow = true;
+    group.add(pyramid);
+  }
 
   return group;
 }

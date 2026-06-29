@@ -34,6 +34,8 @@ index.html
     │                      + river mesh (LineSegments along downhill edges, width ∝ √flux)
     │                      + biome view mesh (non-indexed per-triangle colors + wireframe)
     │                      + settlement rendering (cities + towns) + resource markers (gold octahedrons)
+    │                      + ruins (stone pillar clusters) + minor ruins (tall gray obelisks)
+    │                      + trouble markers (inverted red pyramids)
     ├── 08_colors.js    — PS terrain palette (used by mountain & hill tile color palettes)
     ├── 10_renderer.js  — Three.js scene, HemisphereLight + DirectionalLight (shadows),
      │                      cloud blobs (IcosahedronGeometry at Y=80–120), OrbitControls,
@@ -66,8 +68,11 @@ Seed → Mulberry32 PRNG → 12000–20000 random points (320×320 km extent)
       → Habitability (biome × elevation × slope × water proximity, 0–125)
       → Cities (top habitability sites, ≥32 km apart, coastal-biased)
       → Towns (3 per city ≤30 km radius or 4 standalone, ≥25 km apart, coastal-biased)
-      → Resources (2–4 biome-weighted deposits, one type per deposit)
-      → Per-vertex heights, indexed mesh, vertex colors by biome index
+       → Resources (2–4 biome-weighted deposits, one type per deposit)
+       → Great Ruins (2–4 abandoned city sites near settlements, ≥30 km apart)
+       → Minor Ruins (4+1d6 random tall gray obelisks anywhere on land, ≥20 km apart)
+       → Trouble (1 per resource + safety-based danger markers near settlements/ruins)
+       → Per-vertex heights, indexed mesh, vertex colors by biome index
 ```
 
 ### Per-Template Configuration
@@ -132,10 +137,10 @@ Each terrain vertex is scored 0–125 based on:
 - **Coastal bias** (+20 extra for city selection)
 
 ### Cities
-`findCities()` greedy-selects sites from the top 20% of habitability scores, shuffled for randomness, with **≥32 km** mutual separation. Coastal cells get an additional +20 score bonus.
+`findCities()` greedy-selects sites from the top 20% of habitability scores, shuffled for randomness, with **≥32 km** mutual separation. Coastal cells get an additional +20 score bonus, and resource proximity adds +15 within 15 km.
 
 ### Towns
-`findTowns()` places either **4 standalone towns** (no cities present) or **3 per city** within a **30 km radius**. All towns enforce **≥25 km** mutual separation and apply the same coastal bonus.
+`findTowns()` places either **4 standalone towns** (no cities present) or **3 per city** within a **30 km radius**. All towns enforce **≥25 km** mutual separation. Coastal bonus (+20 habitability) and resource proximity (+15 within 15 km) also applied.
 
 ### Settlement Rendering
 `buildSettlements()` in `07_mesher.js` renders:
@@ -144,7 +149,7 @@ Each terrain vertex is scored 0–125 based on:
 All placed at Y = 0.1 (land flat height).
 
 ### Forest Clearing
-`buildMeshForests()` skips any forest cluster whose centroid falls within **5 km** of a city or town, keeping settlements visually clear of tree cover.
+`buildMeshForests()` skips any forest cluster whose centroid falls within **5 km** of a city or town, and **3 km** of a minor ruin, keeping settlements visually clear of tree cover.
 
 ### Resource Deposits
 `generateResources()` picks **2–4 unique resource types** per region, each placed at its biome-weighted best location:
@@ -158,6 +163,25 @@ All placed at Y = 0.1 (land flat height).
 Cities and towns receive a **+15 placement score bonus** when within **15 km** of a resource deposit, encouraging settlement near economically important sites.
 
 Rendered as **gold octahedrons** (radius 1.2) floating Y = terrain + 2.0 in `buildResources()`.
+
+### Great Ruins
+`findRuins()` places **2–4 abandoned city sites** near existing settlements (within 60 km of any city/town), avoiding occupied cells (30 km exclusion) and enforcing **≥30 km** separation between ruins themselves. Rendered as clusters of **broken stone pillars** (gray cylinders of varying heights) in `buildSettlements()`.
+
+### Minor Ruins
+`findMinorRuins()` scatters **4 + 1d6 (5–10)** random **tall gray obelisks** anywhere on land with **≥20 km** separation. Rendered as `CylinderGeometry(0.3, 0.4, 3.5)` standing at terrain Y + 1.75.
+
+### Trouble
+`findTrouble()` places danger markers in two tiers:
+- **Resource trouble**: exactly **1 per resource** — the worst-habitability land cell within **~20 km** of each deposit
+- **Safety-scaled extras**: `(3 − safety) × 2` additional markers
+  - **Perilous (0)**: 6 extras
+  - **Dangerous (1)**: 4 extras
+  - **Unsafe (2)**: 2 extras
+  - **Safe (3)**: 0 extras
+  - Half land within **~30 km** of a city/town (worst habitability)
+  - Half land directly on random ruin sites
+
+Rendered as **inverted red pyramids** (`ConeGeometry` rotated π) in `buildTrouble()`.
 
 ## Algorithm Notes
 
@@ -188,6 +212,12 @@ Rendered as **gold octahedrons** (radius 1.2) floating Y = terrain + 2.0 in `bui
 **Biomes** — `biomeId()` in `05_terrain.js` uses Azgaar's exact 5×26 biome matrix (5 moisture bands × 26 temperature bands). Overrides: normH < 0 → Marine (0), normH > 0.80 → Glacier (11). Produces 13 biomes: Marine, Hot desert, Cold desert, Savanna, Grassland, Tropical seasonal forest, Temperate deciduous forest, Tropical rainforest, Temperate rainforest, Taiga, Tundra, Glacier, Wetland. Colors looked up via `BIOME_COLORS[13]` array in `07_mesher.js`.
 
 **Forests** — `buildMeshForests()` in `16_mesh_features.js` filters terrain vertices by normalized elevation (0.06–0.55), then applies a biome-index density lookup (`FOREST_DENSITY` array) with a 0.5 survival multiplier. Candidate points are clustered using a centroid-growing algorithm (8 km radius, min 5 per cluster). Each cluster centroid receives an InstancedMesh forest group via `generateForest()` from `15_mesh_tree.js`, which varies tree appearance by dominant biome (Taiga: tall trunk, narrow conical canopy, dark green; Rainforest: tall, large round canopy, deep green; Savanna: short trunk, wide flat canopy, yellow-green; Deciduous: medium, round, includes autumn hues).
+
+**Great Ruins** — `findRuins()` in `05_terrain.js` picks 2–4 high-habitability land cells near existing settlements (within 60 km), avoiding occupied city/town cells (30 km exclusion) and enforcing ≥30 km separation between ruins themselves. Rendered as clusters of broken stone pillars in `buildSettlements()`.
+
+**Minor Ruins** — `findMinorRuins()` scatters 4 + 1d6 (5–10) tall gray obelisks at random land cells, spaced ≥20 km apart. Rendered as `CylinderGeometry(0.3, 0.4, 3.5)` standing at terrain Y + 1.75.
+
+**Trouble** — `findTrouble()` in `05_terrain.js` places danger markers: exactly 1 per resource (worst habitability within ~20 km), plus safety-scaled extras — Perilous=6, Dangerous=4, Unsafe=2, Safe=0. Half the extras land within ~30 km of a city/town (worst habitability), the other half on random ruin sites. Rendered as inverted red pyramids (`ConeGeometry` rotated π) in `buildTrouble()`.
 
 **Biome View** — `buildBiomeViewMesh()` in `07_mesher.js` creates a non-indexed per-triangle mesh where each Delaunay triangle is colored flat by its majority biome, overlaid with a 15% opacity wireframe showing cell boundaries. Toggled via the "Biome View" action in the `Actions` folder of the lil-gui panel (`src/17_gui.js`).
 
