@@ -500,7 +500,7 @@ function computeRivers(h, adj) {
     if (flux[i] > maxFlux) maxFlux = flux[i];
   }
   if (maxFlux === 0) maxFlux = 1;
-  const threshold = maxFlux * 0.1;
+  const threshold = maxFlux * 0.02;
   const isRiver = new Uint8Array(n);
   for (let i = 0; i < n; i++) {
     if (flux[i] > threshold && h[i] > 0) isRiver[i] = 1;
