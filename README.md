@@ -27,11 +27,13 @@ index.html
     │                      hydraulic erosion → fjord trench carve → sea-level cut →
     │                      sink-fill → coast clean → template-specific features
     │                      (inverted depressions: lake basin / bay blob)
+    │                      + habitability scoring + cities/towns placement + resource deposits
     ├── 06_coast.js     — Chaikin smoothing (retained, unused by current pipeline)
      ├── 07_mesher.js    — Delaunay triangles → Three.js indexed BufferGeometry
     │                      + per-vertex biome colors (Azgaar 5×26 temperature × moisture matrix)
     │                      + river mesh (LineSegments along downhill edges, width ∝ √flux)
     │                      + biome view mesh (non-indexed per-triangle colors + wireframe)
+    │                      + settlement rendering (cities + towns) + resource markers (gold octahedrons)
     ├── 08_colors.js    — PS terrain palette (used by mountain & hill tile color palettes)
     ├── 10_renderer.js  — Three.js scene, HemisphereLight + DirectionalLight (shadows),
      │                      cloud blobs (IcosahedronGeometry at Y=80–120), OrbitControls,
@@ -63,7 +65,8 @@ Seed → Mulberry32 PRNG → 12000–20000 random points (320×320 km extent)
       → Temperature (latitudinal + elevation lapse) → Biomes (Azgaar 5×26 matrix)
       → Habitability (biome × elevation × slope × water proximity, 0–125)
       → Cities (top habitability sites, ≥32 km apart, coastal-biased)
-      → Towns (3 per city ≤30 km radius or 4 standalone, ≥25 km apart)
+      → Towns (3 per city ≤30 km radius or 4 standalone, ≥25 km apart, coastal-biased)
+      → Resources (2–4 biome-weighted deposits, one type per deposit)
       → Per-vertex heights, indexed mesh, vertex colors by biome index
 ```
 
@@ -142,6 +145,19 @@ All placed at Y = 0.1 (land flat height).
 
 ### Forest Clearing
 `buildMeshForests()` skips any forest cluster whose centroid falls within **5 km** of a city or town, keeping settlements visually clear of tree cover.
+
+### Resource Deposits
+`generateResources()` picks **2–4 unique resource types** per region, each placed at its biome-weighted best location:
+- **game/hide/fur** — Savanna, Grassland, Taiga, Tundra
+- **timber/clay** — Temperate deciduous/rainforest, Taiga
+- **herb/spice/dye** — Tropical seasonal/rainforest, Temperate rainforest
+- **copper/tin/iron** — Cold desert, Taiga, Tundra (elevation bonus)
+- **silver/gold/gems** — Cold desert, Taiga, Tundra (elevation bonus)
+- **exotic** — Tropical seasonal/rainforest, Temperate rainforest, Wetland
+
+Cities and towns receive a **+15 placement score bonus** when within **15 km** of a resource deposit, encouraging settlement near economically important sites.
+
+Rendered as **gold octahedrons** (radius 1.2) floating Y = terrain + 2.0 in `buildResources()`.
 
 ## Algorithm Notes
 

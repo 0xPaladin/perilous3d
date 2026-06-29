@@ -198,3 +198,23 @@ export function buildBiomeViewMesh(region) {
 
   return group;
 }
+
+export function buildResources(region) {
+  const { resources, heights, waterLevel } = region;
+  const group = new THREE.Group();
+  group.name = 'resources';
+  if (!resources || resources.length === 0) return group;
+
+  const mat = new THREE.MeshLambertMaterial({ color: 0xffd700 });
+  for (const res of resources) {
+    const terrainY = heights[res.idx] > waterLevel ? 0.1 : 0.0;
+    const y = terrainY + 2.0;
+    const octa = new THREE.Mesh(new THREE.OctahedronGeometry(1.2, 0), mat);
+    octa.position.set(res.x, y, res.z);
+    octa.rotation.y = Math.PI / 4;
+    octa.name = 'resource';
+    group.add(octa);
+  }
+
+  return group;
+}

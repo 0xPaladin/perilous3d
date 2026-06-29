@@ -46,7 +46,7 @@ export function createScene(canvas, region) {
   let terrainMesh = null;
   let biomeViewGroup = null;
 
-  import('./07_mesher.js').then(({ buildTerrainMesh, buildRiverMesh, buildBiomeViewMesh, buildTrees, buildSettlements }) => {
+  import('./07_mesher.js').then(({ buildTerrainMesh, buildRiverMesh, buildBiomeViewMesh, buildTrees, buildSettlements, buildResources }) => {
     terrainMesh = buildTerrainMesh(region);
     terrainMesh.receiveShadow = true;
     scene.add(terrainMesh);
@@ -55,7 +55,8 @@ export function createScene(canvas, region) {
     if (riverMesh) scene.add(riverMesh);
 
     scene.add(buildTrees(region, scene));
-    scene.add(buildSettlements(region, scene));
+    scene.add(buildSettlements(region));
+    scene.add(buildResources(region));
 
     biomeViewGroup = buildBiomeViewMesh(region);
     biomeViewGroup.visible = false;

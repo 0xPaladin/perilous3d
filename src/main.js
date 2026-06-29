@@ -42,6 +42,8 @@ function generate(template, seedStr, mountainCount, baseTemp, safety) {
   const oldCanvas = canvas.querySelector('canvas');
   if (oldCanvas) oldCanvas.remove();
 
+  logRegionStats(region);
+
   app.sceneState = createScene(canvas, region);
   animate(app.sceneState);
 
@@ -52,6 +54,27 @@ function generate(template, seedStr, mountainCount, baseTemp, safety) {
   url.searchParams.set('temp', baseTemp);
   url.searchParams.set('safety', safety);
   history.replaceState({}, '', url);
+}
+
+const BIOME_NAMES = [
+  'Marine', 'Hot desert', 'Cold desert', 'Savanna', 'Grassland',
+  'Tropical seasonal forest', 'Temperate deciduous forest', 'Tropical rainforest',
+  'Temperate rainforest', 'Taiga', 'Tundra', 'Glacier', 'Wetland'
+];
+
+function logRegionStats(region) {
+  const biomeCounts = new Array(13).fill(0);
+  if (region.biome) {
+    for (let i = 0; i < region.biome.length; i++) {
+      const b = region.biome[i];
+      if (b >= 0 && b < 13) biomeCounts[b]++;
+    }
+  }
+  console.log('=== Region Stats ===');
+  console.log('Biomes:', biomeCounts.map((c, i) => `${BIOME_NAMES[i]}: ${c}`).join(' | '));
+  console.log('Cities:', region.cities || []);
+  console.log('Towns:', region.towns || []);
+  console.log('Resources:', region.resources || []);
 }
 
 // Load URL seed or generate new

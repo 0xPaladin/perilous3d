@@ -542,7 +542,19 @@ function computeHabitability(pts, heights, waterLevel, biome, adj, flux, maxLand
   return { habitability, nearWater };
 }
 
-function findCities(pts, heights, waterLevel, habitability, nearWater, count, rngSeed) {
+function computeNearResource(pts, resources, radiusKm) {
+  const near = new Uint8Array(pts.length);
+  const rSq = radiusKm * radiusKm;
+  for (const res of resources) {
+    for (let i = 0; i < pts.length; i++) {
+      const dx = pts[i][0] - res.x, dz = pts[i][1] - res.z;
+      if (dx * dx + dz * dz < rSq) near[i] = 1;
+    }
+  }
+  return near;
+}
+
+function findCities(pts, heights, waterLevel, habitability, nearWater, nearResource, count, rngSeed) {
   if (count <= 0) return [];
   const rng = createRng(rngSeed ^ 0xDEAD);
   const minDistSq = 32 * 32;
@@ -550,7 +562,7 @@ function findCities(pts, heights, waterLevel, habitability, nearWater, count, rn
   const landCells = [];
   for (let i = 0; i < pts.length; i++) {
     if (heights[i] > waterLevel && habitability[i] > 0) {
-      landCells.push({ idx: i, score: habitability[i] + (nearWater[i] ? 20 : 0) });
+      landCells.push({ idx: i, score: habitability[i] + (nearWater[i] ? 20 : 0) + (nearResource ? nearResource[i] ? 15 : 0 : 0) });
     }
   }
   landCells.sort((a, b) => b.score - a.score);
@@ -580,12 +592,12 @@ function findCities(pts, heights, waterLevel, habitability, nearWater, count, rn
   return cities;
 }
 
-function findTowns(cities, pts, heights, waterLevel, habitability, nearWater, count, rngSeed) {
+function findTowns(cities, pts, heights, waterLevel, habitability, nearWater, nearResource, count, rngSeed) {
   const rng = createRng(rngSeed ^ 0xBEEF);
   const minDistSq = 25 * 25;
   const towns = [];
 
-  const score = (idx) => habitability[idx] + (nearWater[idx] ? 20 : 0);
+  const score = (idx) => habitability[idx] + (nearWater[idx] ? 20 : 0) + (nearResource ? nearResource[idx] ? 15 : 0 : 0);
 
   if (cities.length === 0) {
     const landCells = [];
@@ -631,6 +643,52 @@ function findTowns(cities, pts, heights, waterLevel, habitability, nearWater, co
   }
 
   return towns;
+}
+
+const RESOURCE_TYPES = [
+  'game/hide/fur',
+  'timber/clay',
+  'herb/spice/dye',
+  'copper/tin/iron',
+  'silver/gold/gems',
+  'exotic',
+];
+
+const RESOURCE_BIOME_WEIGHT = {
+  'game/hide/fur':    [0, 0, 0, 3, 3, 1, 2, 1, 1, 2, 2, 0, 1],
+  'timber/clay':      [0, 0, 0, 1, 1, 2, 3, 2, 3, 2, 0, 0, 1],
+  'herb/spice/dye':   [0, 0, 0, 1, 1, 3, 2, 3, 3, 0, 0, 0, 1],
+  'copper/tin/iron':  [0, 0, 2, 0, 0, 0, 1, 0, 0, 2, 1, 0, 0],
+  'silver/gold/gems': [0, 1, 3, 0, 0, 0, 1, 0, 0, 2, 1, 0, 0],
+  'exotic':           [0, 0, 0, 1, 1, 3, 2, 3, 3, 0, 0, 0, 2],
+};
+
+function generateResources(pts, heights, waterLevel, biome, maxLandH, count, rngSeed) {
+  const rng = createRng(rngSeed ^ 0xFACE);
+  const n = Math.max(2, Math.min(4, count + 2));
+  const types = RESOURCE_TYPES.sort(() => rng() - 0.5).slice(0, n);
+  const chosen = [];
+
+  for (const resType of types) {
+    const weights = RESOURCE_BIOME_WEIGHT[resType];
+    const scored = [];
+    for (let i = 0; i < pts.length; i++) {
+      if (heights[i] <= waterLevel) continue;
+      const b = biome[i];
+      let w = weights[b] || 0;
+      if (w <= 0) continue;
+      const normH = (heights[i] - waterLevel) / maxLandH;
+      if (resType === 'copper/tin/iron' || resType === 'silver/gold/gems') w *= (0.5 + normH);
+      scored.push({ idx: i, score: w + rng() * 0.5, x: pts[i][0], z: pts[i][1] });
+    }
+    scored.sort((a, b) => b.score - a.score);
+    if (scored.length > 0) {
+      const best = scored[0];
+      chosen.push({ idx: best.idx, x: best.x, z: best.z, type: resType });
+    }
+  }
+
+  return chosen;
 }
 
 function computeRivers(h, adj) {
@@ -801,8 +859,10 @@ export function buildRegion(template, cols, rows, seed, mountainCount, baseTemp 
   }
 
   const { habitability, nearWater } = computeHabitability(pts, h, waterLevel, biome, adj, rivers.flux, maxLandH);
-  const cities = findCities(pts, h, waterLevel, habitability, nearWater, cityCount, seed ^ 0xCAFE);
-  const towns = findTowns(cities, pts, h, waterLevel, habitability, nearWater, cityCount, seed ^ 0xFEED);
+  const resources = generateResources(pts, h, waterLevel, biome, maxLandH, cityCount, seed ^ 0xBABE);
+  const nearResource = computeNearResource(pts, resources, 15);
+  const cities = findCities(pts, h, waterLevel, habitability, nearWater, nearResource, cityCount, seed ^ 0xCAFE);
+  const towns = findTowns(cities, pts, h, waterLevel, habitability, nearWater, nearResource, cityCount, seed ^ 0xFEED);
 
   return {
     pts,
@@ -828,5 +888,6 @@ export function buildRegion(template, cols, rows, seed, mountainCount, baseTemp 
     nearWater,
     cities,
     towns,
+    resources,
   };
 }
