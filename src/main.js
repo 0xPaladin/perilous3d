@@ -9,9 +9,10 @@ import { createScene, animate } from './10_renderer.js';
 import { progressPanel, updateSeedDisplay } from './11_ui.js';
 import { initGUI } from './17_gui.js';
 
-const app = { sceneState: null, seed: null };
+const app = { sceneState: null, seed: null, seedStr: null };
 
-function generate(template, seedStr, mountainCount, baseTemp) {
+function generate(template, seedStr, mountainCount, baseTemp, safety) {
+  app.seedStr = seedStr;
   const seed = seedFromString(seedStr);
   const seedNum = seed.toString(36).toUpperCase();
   app.seed = seedNum;
@@ -25,9 +26,11 @@ function generate(template, seedStr, mountainCount, baseTemp) {
   const canvas = document.getElementById('container');
   canvas.innerHTML = '';
 
+  const cityCount = safety || 0;
+
   let region;
   try {
-    region = buildRegion(template, 55, 55, seed, mountainCount, baseTemp);
+    region = buildRegion(template, 55, 55, seed, mountainCount, baseTemp, cityCount);
   } catch (e) {
     console.error('terrain generation failed:', e);
     progressPanel.hide();
@@ -47,6 +50,7 @@ function generate(template, seedStr, mountainCount, baseTemp) {
   url.searchParams.set('seed', seedNum);
   url.searchParams.set('mountains', mountainCount);
   url.searchParams.set('temp', baseTemp);
+  url.searchParams.set('safety', safety);
   history.replaceState({}, '', url);
 }
 
@@ -55,6 +59,7 @@ const urlParams = new URLSearchParams(window.location.search);
 const initialTemplate = urlParams.get('template') || 'island';
 const initialMountains = urlParams.get('mountains') ? parseInt(urlParams.get('mountains'), 10) : 200;
 const initialTemp = urlParams.get('temp') ? parseInt(urlParams.get('temp'), 10) : Math.floor(Math.random() * 30 + 5);
+const initialSafety = urlParams.get('safety') ? parseInt(urlParams.get('safety'), 10) : 0;
 const initialSeed = urlParams.get('seed') || (Math.random().toString(36).substring(2, 10) + Date.now().toString(36));
 
 // Init GUI
@@ -64,6 +69,7 @@ initGUI({
   initialTemplate,
   initialMountains,
   initialTemp,
+  initialSafety,
 });
 
-generate(initialTemplate, initialSeed, initialMountains, initialTemp);
+generate(initialTemplate, initialSeed, initialMountains, initialTemp, initialSafety);

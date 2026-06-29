@@ -95,8 +95,50 @@ export function buildTrees(region, scene) {
   return new THREE.Group();
 }
 
-export function buildSettlements(region, scene) {
-  return new THREE.Group();
+export function buildSettlements(region) {
+  const { cities, towns } = region;
+  const group = new THREE.Group();
+  group.name = 'settlements';
+
+  const cityMat = new THREE.MeshLambertMaterial({ color: 0xcc9966 });
+  const cityRoof = new THREE.MeshLambertMaterial({ color: 0x884422 });
+  const cityWall = new THREE.MeshLambertMaterial({ color: 0xddbb88 });
+  const townMat = new THREE.MeshLambertMaterial({ color: 0xbbaa88 });
+  const townRoof = new THREE.MeshLambertMaterial({ color: 0x664422 });
+
+  function addCity(x, z) {
+    const keep = new THREE.Mesh(new THREE.CylinderGeometry(1.8, 2.0, 0.6, 8), cityWall);
+    keep.position.set(x, 0.3, z);
+    keep.castShadow = true;
+    group.add(keep);
+
+    const tower = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.8, 1.2, 8), cityMat);
+    tower.position.set(x, 0.9, z);
+    tower.castShadow = true;
+    group.add(tower);
+
+    const roof = new THREE.Mesh(new THREE.ConeGeometry(0.8, 0.5, 8), cityRoof);
+    roof.position.set(x, 1.5, z);
+    roof.castShadow = true;
+    group.add(roof);
+  }
+
+  function addTown(x, z) {
+    const wall = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 1.0, 0.4, 6), townMat);
+    wall.position.set(x, 0.25, z);
+    wall.castShadow = true;
+    group.add(wall);
+
+    const roof = new THREE.Mesh(new THREE.ConeGeometry(0.8, 0.35, 6), townRoof);
+    roof.position.set(x, 0.6, z);
+    roof.castShadow = true;
+    group.add(roof);
+  }
+
+  if (cities && cities.length) for (const c of cities) addCity(c.x, c.z);
+  if (towns && towns.length) for (const t of towns) addTown(t.x, t.z);
+
+  return group;
 }
 
 export function buildBiomeViewMesh(region) {

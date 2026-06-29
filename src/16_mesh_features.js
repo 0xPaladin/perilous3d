@@ -147,8 +147,19 @@ export function buildMeshForests(region) {
     }
   }
 
+  const settlements = (region.cities || []).concat(region.towns || []);
+  const CLEAR_RADIUS_SQ = 5 * 5;
+
   for (let ci = 0; ci < forestClusters.length; ci++) {
     const fc = forestClusters[ci];
+
+    let obstructed = false;
+    for (const s of settlements) {
+      const dx = fc.cx - s.x, dz = fc.cz - s.z;
+      if (dx * dx + dz * dz < CLEAR_RADIUS_SQ) { obstructed = true; break; }
+    }
+    if (obstructed) continue;
+
     const fSeed = ((seed * 73 + ci * 131 + 12345) % 233280) | 0;
     const prng = mulberry32(fSeed);
     const forest = generateForest(prng, fc.cx, fc.cz, fc.count, fc.radius, 1.5 + prng() * 1.5, { biome: fc.biome });

@@ -395,6 +395,8 @@ const BIOMES_MATRIX = [
   new Uint8Array([7, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 9, 9, 9, 9, 9, 9, 9, 10, 10]),
 ];
 
+const HABITABILITY = [0, 4, 10, 22, 30, 50, 100, 90, 80, 12, 4, 0, 12];
+
 function biomeFromMatrix(normH, tempBand, moisture) {
   if (normH < 0) return 0;
   if (normH > 0.80) return 11;
@@ -489,6 +491,148 @@ function computeMoisture(pts, heights, waterLevel, adj, flux) {
   return moisture;
 }
 
+function computeHabitability(pts, heights, waterLevel, biome, adj, flux, maxLandH) {
+  const n = heights.length;
+  const habitability = new Float64Array(n);
+  const nearWater = new Uint8Array(n);
+  const raw = new Float64Array(n);
+  const visited = new Uint8Array(n);
+  const queue = [];
+
+  let maxFlux = 0;
+  for (let i = 0; i < n; i++) if (flux[i] > maxFlux) maxFlux = flux[i];
+  if (maxFlux === 0) maxFlux = 1;
+  const riverThreshold = maxFlux * 0.1;
+
+  for (let i = 0; i < n; i++) {
+    if (heights[i] <= waterLevel) { raw[i] = 8; queue.push(i); visited[i] = 1; continue; }
+    if (flux[i] > riverThreshold) { raw[i] = 10; queue.push(i); visited[i] = 1; continue; }
+    const nbs = adj[i];
+    for (const j of nbs) {
+      if (heights[j] <= waterLevel) { raw[i] = 7; queue.push(i); visited[i] = 1; break; }
+    }
+  }
+
+  let head = 0;
+  while (head < queue.length) {
+    const current = queue[head++];
+    if (raw[current] >= 5) nearWater[current] = 1;
+    if (raw[current] <= 3) continue;
+    const nbs = adj[current];
+    for (const j of nbs) {
+      if (visited[j] || heights[j] <= waterLevel) continue;
+      raw[j] = raw[current] * 0.94;
+      visited[j] = 1;
+      queue.push(j);
+    }
+  }
+
+  const slopeArr = getSlope(heights, adj, pts);
+
+  for (let i = 0; i < n; i++) {
+    if (heights[i] <= waterLevel) { habitability[i] = 0; continue; }
+    const normH = (heights[i] - waterLevel) / maxLandH;
+    let score = HABITABILITY[biome[i]];
+    score *= Math.exp(-((normH - 0.35) ** 2) / 0.15);
+    score *= Math.max(0.4, 1 - slopeArr[i] * 2);
+    if (nearWater[i]) score += 10;
+    habitability[i] = Math.max(0, Math.min(score, 125));
+  }
+
+  return { habitability, nearWater };
+}
+
+function findCities(pts, heights, waterLevel, habitability, nearWater, count, rngSeed) {
+  if (count <= 0) return [];
+  const rng = createRng(rngSeed ^ 0xDEAD);
+  const minDistSq = 32 * 32;
+
+  const landCells = [];
+  for (let i = 0; i < pts.length; i++) {
+    if (heights[i] > waterLevel && habitability[i] > 0) {
+      landCells.push({ idx: i, score: habitability[i] + (nearWater[i] ? 20 : 0) });
+    }
+  }
+  landCells.sort((a, b) => b.score - a.score);
+
+  const topN = Math.floor(Math.max(landCells.length * 0.2, count * 3));
+  const candidates = landCells.slice(0, Math.min(topN, landCells.length));
+
+  for (let i = candidates.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
+  }
+
+  const cities = [];
+  for (const c of candidates) {
+    if (cities.length >= count) break;
+    const cx = pts[c.idx][0], cz = pts[c.idx][1];
+    let ok = true;
+    for (const city of cities) {
+      const dx = cx - city.x, dz = cz - city.z;
+      if (dx * dx + dz * dz < minDistSq) { ok = false; break; }
+    }
+    if (ok) {
+      cities.push({ x: cx, z: cz, idx: c.idx, habitability: c.score });
+    }
+  }
+
+  return cities;
+}
+
+function findTowns(cities, pts, heights, waterLevel, habitability, nearWater, count, rngSeed) {
+  const rng = createRng(rngSeed ^ 0xBEEF);
+  const minDistSq = 25 * 25;
+  const towns = [];
+
+  const score = (idx) => habitability[idx] + (nearWater[idx] ? 20 : 0);
+
+  if (cities.length === 0) {
+    const landCells = [];
+    for (let i = 0; i < pts.length; i++) {
+      if (heights[i] > waterLevel && habitability[i] > 0) landCells.push({ idx: i, score: score(i) });
+    }
+    landCells.sort((a, b) => b.score - a.score);
+    for (const c of landCells) {
+      if (towns.length >= 4) break;
+      const cx = pts[c.idx][0], cz = pts[c.idx][1];
+      let ok = true;
+      for (const t of towns) {
+        const dx = cx - t.x, dz = cz - t.z;
+        if (dx * dx + dz * dz < minDistSq) { ok = false; break; }
+      }
+      if (ok) towns.push({ x: cx, z: cz, idx: c.idx, habitability: c.score });
+    }
+  } else {
+    const RADIUS = 30;
+    const RADIUS_SQ = RADIUS * RADIUS;
+    const needed = count * 3;
+    for (const city of cities) {
+      if (towns.length >= needed) break;
+      let candidates = [];
+      for (let i = 0; i < pts.length; i++) {
+        if (heights[i] <= waterLevel) continue;
+        const dx = pts[i][0] - city.x, dz = pts[i][1] - city.z;
+        if (dx * dx + dz * dz > RADIUS_SQ) continue;
+        candidates.push({ idx: i, score: score(i) });
+      }
+      candidates.sort((a, b) => b.score - a.score);
+      for (const c of candidates) {
+        if (towns.length >= needed) break;
+        const tx = pts[c.idx][0], tz = pts[c.idx][1];
+        let ok = true;
+        for (const t of towns) {
+          const dx = tx - t.x, dz = tz - t.z;
+          if (dx * dx + dz * dz < minDistSq) { ok = false; break; }
+        }
+        if (ok) towns.push({ x: tx, z: tz, idx: c.idx, habitability: c.score });
+      }
+    }
+  }
+
+  return towns;
+}
+
 function computeRivers(h, adj) {
   const dh = downhill(h, adj);
   const flux = getFlux(h, adj);
@@ -512,7 +656,7 @@ function computeRivers(h, adj) {
   return { segments, flux, dh };
 }
 
-export function buildRegion(template, cols, rows, seed, mountainCount, baseTemp = 22) {
+export function buildRegion(template, cols, rows, seed, mountainCount, baseTemp = 22, cityCount = 0) {
   const rng = createRng(seed);
   const extent = { width: 320, height: 320 };
   const npts = 12000 + Math.floor(rng() * 8000);
@@ -656,6 +800,10 @@ export function buildRegion(template, cols, rows, seed, mountainCount, baseTemp 
     biome[i] = biomeFromMatrix(normH, tempBand[i], moisture[i]);
   }
 
+  const { habitability, nearWater } = computeHabitability(pts, h, waterLevel, biome, adj, rivers.flux, maxLandH);
+  const cities = findCities(pts, h, waterLevel, habitability, nearWater, cityCount, seed ^ 0xCAFE);
+  const towns = findTowns(cities, pts, h, waterLevel, habitability, nearWater, cityCount, seed ^ 0xFEED);
+
   return {
     pts,
     triangles: del.triangles,
@@ -676,5 +824,9 @@ export function buildRegion(template, cols, rows, seed, mountainCount, baseTemp 
     moisture,
     biome,
     rivers,
+    habitability,
+    nearWater,
+    cities,
+    towns,
   };
 }

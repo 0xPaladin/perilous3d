@@ -59,9 +59,12 @@ Seed → Mulberry32 PRNG → 12000–20000 random points (320×320 km extent)
      → Sea-level cut (quantile per template)
      → Fill sinks → clean coast (remove 1-cell artifacts)
      → Template-specific features (lake basin / bay blob inverted depressions)
-     → Rivers (downhill flux accumulation) → Moisture (Azgaar BFS + neighbor averaging)
-     → Temperature (latitudinal + elevation lapse) → Biomes (Azgaar 5×26 matrix)
-     → Per-vertex heights, indexed mesh, vertex colors by biome index
+      → Rivers (downhill flux accumulation) → Moisture (Azgaar BFS + neighbor averaging)
+      → Temperature (latitudinal + elevation lapse) → Biomes (Azgaar 5×26 matrix)
+      → Habitability (biome × elevation × slope × water proximity, 0–125)
+      → Cities (top habitability sites, ≥32 km apart, coastal-biased)
+      → Towns (3 per city ≤30 km radius or 4 standalone, ≥25 km apart)
+      → Per-vertex heights, indexed mesh, vertex colors by biome index
 ```
 
 ### Per-Template Configuration
@@ -95,7 +98,7 @@ python -m http.server 8000
 ### URL Parameters
 
 ```
-https://0xPaladin.github.io/Outlands/?template=island&seed=ABCD1234&mountains=200&temp=22
+https://0xPaladin.github.io/Outlands/?template=island&seed=ABCD1234&mountains=200&temp=22&safety=1
 ```
 
 | Param      | Values                    | Description                              |
@@ -104,15 +107,41 @@ https://0xPaladin.github.io/Outlands/?template=island&seed=ABCD1234&mountains=20
 | `seed`     | any URL-safe string        | Deterministic map seed                   |
 | `mountains` | 0–500                    | Number of mountain peaks                 |
 | `temp`     | 0–35                      | Base temperature in °C                   |
+| `safety`   | 0–3                       | Cities: Perilous(0) / Dangerous(1) / Unsafe(2) / Safe(3) |
 
 ## Controls
 
 - **OrbitControls**: left-click rotate, right-click pan, scroll to zoom
 - **lil-gui** (top-right panel):
   - **Template** → map template dropdown
-  - **Parameters** → Mountains (0–500) and Base Temp (0–35°C) sliders
-  - **Actions** → `New Island`, `Reset View`, `Biome View` toggle
+  - **Parameters** → Mountains (0–500), Base Temp (0–35°C), Safety (Perilous/Dangerous/Unsafe/Safe)
+  - **Actions** → `New Island`, `Update`, `Biome View` toggle
   - **Info** → current seed (read-only)
+
+## Habitability & Settlements
+
+### Habitability Score
+Each terrain vertex is scored 0–125 based on:
+- **Biome base** (`HABITABILITY[13]` — Temperate deciduous forest = 100, Glacier/Marine = 0)
+- **Elevation gaussian** (favors 0.2–0.5 normalized height)
+- **Slope penalty** (`max(0.4, 1 − slope×2)`)
+- **Water proximity bonus** (+10 within ~3 hops of coast/river)
+- **Coastal bias** (+20 extra for city selection)
+
+### Cities
+`findCities()` greedy-selects sites from the top 20% of habitability scores, shuffled for randomness, with **≥32 km** mutual separation. Coastal cells get an additional +20 score bonus.
+
+### Towns
+`findTowns()` places either **4 standalone towns** (no cities present) or **3 per city** within a **30 km radius**. All towns enforce **≥25 km** mutual separation and apply the same coastal bonus.
+
+### Settlement Rendering
+`buildSettlements()` in `07_mesher.js` renders:
+- **Cities**: stone keep (wide low cylinder) + tower + cone roof
+- **Towns**: smaller single-wall hut + cone roof
+All placed at Y = 0.1 (land flat height).
+
+### Forest Clearing
+`buildMeshForests()` skips any forest cluster whose centroid falls within **5 km** of a city or town, keeping settlements visually clear of tree cover.
 
 ## Algorithm Notes
 
