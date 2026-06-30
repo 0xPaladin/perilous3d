@@ -1288,7 +1288,8 @@ export function buildRegion(template, cols, rows, seed, terrain, baseTemp = 22, 
     }
   }
 
-  // No relaxation — sharp peaks
+  // Preserve pre-normalize absolute heights for mesh vertex Y displacement
+  const rawHeights = Array.from(h);
   h = normalize(h);
   h = peaky(h);
   h = doErosion(h, runif(0.02, 0.12, rng), 8, adj, pts, extent);
@@ -1616,6 +1617,7 @@ export function buildRegion(template, cols, rows, seed, terrain, baseTemp = 22, 
     halfedges: del.halfedges,
     adj,
     heights: Array.from(h),
+    rawHeights,
     heightMin,
     heightMax,
     heightRange,

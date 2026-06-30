@@ -33,7 +33,7 @@ const HILL_THRESHOLD = 0.65;
 const HEIGHT_SCALE = 3.5;
 
 export function buildMeshMountains(region) {
-  const { pts, heights, mounts, waterLevel, heightMax, seed } = region;
+  const { pts, heights, mounts, waterLevel, heightMax, seed, rawHeights } = region;
   const group = new THREE.Group();
   if (!mounts || mounts.length === 0) return group;
 
@@ -45,7 +45,8 @@ export function buildMeshMountains(region) {
     const prng = mulberry32(mSeed);
 
     const rawH = findNearestHeight(m.x, m.y, pts, heights);
-    const normH = Math.max(0, rawH - waterLevel) / maxLandH;
+    const normH = Math.max(0, rawH - waterLevel) / Math.max(heightMax - waterLevel, 0.001);
+    const baseY = rawH > waterLevel ? (findNearestHeight(m.x, m.y, pts, rawHeights) * 3.0) : 0.0;
 
     const tileH = Math.max(0.5, m.r * 0.8);
     const xyScale = m.r / HEIGHT_SCALE;
@@ -55,14 +56,14 @@ export function buildMeshMountains(region) {
       const mesh = createMountainTileMesh(tile, tileH);
       const yScale = m.r * 0.35;
       mesh.scale.set(xyScale, yScale, xyScale);
-      mesh.position.set(m.x, -0.005, m.y);
+      mesh.position.set(m.x, baseY, m.y);
       group.add(mesh);
     } else {
       const tile = generateHillTile(prng, 0, 0, tileH, 10);
       const mesh = createTerrainTileMesh(tile, tileH, HILL_PALETTE);
       const yScale = m.r * 0.18;
       mesh.scale.set(xyScale, yScale, xyScale);
-      mesh.position.set(m.x, -0.005, m.y);
+      mesh.position.set(m.x, baseY, m.y);
       group.add(mesh);
     }
   }
@@ -73,7 +74,7 @@ export function buildMeshMountains(region) {
 const FOREST_DENSITY = [0, 0, 0, 0.2, 0.2, 0.7, 0.7, 1.0, 1.0, 0.5, 0.05, 0, 0.4];
 
 export function buildMeshForests(region) {
-  const { pts, heights, waterLevel, heightMax, biome, seed, extent } = region;
+  const { pts, heights, rawHeights, waterLevel, heightMax, biome, seed, extent } = region;
   const group = new THREE.Group();
   if (!pts || !biome) return group;
 
@@ -182,7 +183,8 @@ export function buildMeshForests(region) {
     const fSeed = ((seed * 73 + ci * 131 + 12345) % 233280) | 0;
     const prng = mulberry32(fSeed);
     const forest = generateForest(prng, fc.cx, fc.cz, fc.count, fc.radius, 1.5 + prng() * 1.5, { biome: fc.biome });
-    forest.position.y = 0.1;
+    const forestBaseY = centroidH > waterLevel ? (findNearestHeight(fc.cx, fc.cz, pts, rawHeights) * 3.0) : 0.0;
+    forest.position.y = forestBaseY;
     group.add(forest);
   }
 

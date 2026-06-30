@@ -34,15 +34,16 @@ function biomeFromMatrix(normH, tempBand, moisture) {
 }
 
 export function buildTerrainMesh(region) {
-  const { pts, triangles, heights, heightMax, waterLevel, tempBand, moisture, biome } = region;
+  const { pts, triangles, heights, rawHeights, heightMax, waterLevel, tempBand, moisture, biome } = region;
   const maxLandH = Math.max(heightMax - waterLevel, 0.001);
+  const TERRAIN_Y_SCALE = 3.0;
   const n = pts.length;
   const positions = new Float32Array(n * 3);
   const colors = new Float32Array(n * 3);
 
   for (let i = 0; i < n; i++) {
     const rawH = heights[i];
-    const y = rawH > waterLevel ? 0.1 : 0.0;
+    const y = rawH > waterLevel ? (rawHeights[i] * TERRAIN_Y_SCALE) : 0.0;
     const normH = (rawH - waterLevel) / maxLandH;
     const b = (tempBand && moisture) ? biomeFromMatrix(normH, tempBand[i], moisture[i]) : (biome ? biome[i] : 0);
     const c = BIOME_COLORS[b] || BIOME_COLORS[0];
@@ -67,15 +68,15 @@ export function buildTerrainMesh(region) {
 }
 
 export function buildRiverMesh(region) {
-  const { pts, heights, waterLevel, rivers } = region;
+  const { pts, heights, rawHeights, waterLevel, rivers } = region;
   if (!rivers || !rivers.segments || rivers.segments.length === 0) return null;
 
   const positions = [];
 
   for (const seg of rivers.segments) {
     const i = seg[0], j = seg[1];
-    const y1 = heights[i] > waterLevel ? 0.2 : 0.05;
-    const y2 = heights[j] > waterLevel ? 0.2 : 0.05;
+    const y1 = heights[i] > waterLevel ? (rawHeights[i] * 3.0 + 0.2) : 0.05;
+    const y2 = heights[j] > waterLevel ? (rawHeights[j] * 3.0 + 0.2) : 0.05;
 
     positions.push(pts[i][0], y1, pts[i][1]);
     positions.push(pts[j][0], y2, pts[j][1]);
@@ -96,7 +97,7 @@ export function buildTrees(region, scene) {
 }
 
 export function buildSettlements(region) {
-  const { cities, towns, ruins, minorRuins, heights, waterLevel } = region;
+  const { cities, towns, ruins, minorRuins, heights, rawHeights, waterLevel } = region;
   const group = new THREE.Group();
   group.name = 'settlements';
 
@@ -106,48 +107,49 @@ export function buildSettlements(region) {
   const townMat = new THREE.MeshLambertMaterial({ color: 0xbbaa88 });
   const townRoof = new THREE.MeshLambertMaterial({ color: 0x664422 });
 
-  function addCity(x, z) {
+  function addCity(x, z, baseY) {
     const keep = new THREE.Mesh(new THREE.CylinderGeometry(1.8, 2.0, 0.6, 8), cityWall);
-    keep.position.set(x, 0.3, z);
+    keep.position.set(x, baseY + 0.3, z);
     keep.castShadow = true;
     group.add(keep);
 
     const tower = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.8, 1.2, 8), cityMat);
-    tower.position.set(x, 0.9, z);
+    tower.position.set(x, baseY + 0.9, z);
     tower.castShadow = true;
     group.add(tower);
 
     const roof = new THREE.Mesh(new THREE.ConeGeometry(0.8, 0.5, 8), cityRoof);
-    roof.position.set(x, 1.5, z);
+    roof.position.set(x, baseY + 1.5, z);
     roof.castShadow = true;
     group.add(roof);
   }
 
-  function addTown(x, z) {
+  function addTown(x, z, baseY) {
     const wall = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 1.0, 0.4, 6), townMat);
-    wall.position.set(x, 0.25, z);
+    wall.position.set(x, baseY + 0.25, z);
     wall.castShadow = true;
     group.add(wall);
 
     const roof = new THREE.Mesh(new THREE.ConeGeometry(0.8, 0.35, 6), townRoof);
-    roof.position.set(x, 0.6, z);
+    roof.position.set(x, baseY + 0.6, z);
     roof.castShadow = true;
     group.add(roof);
   }
 
-  if (cities && cities.length) for (const c of cities) addCity(c.x, c.z);
-  if (towns && towns.length) for (const t of towns) addTown(t.x, t.z);
+  if (cities && cities.length) for (const c of cities) addCity(c.x, c.z, heights[c.idx] > waterLevel ? (rawHeights[c.idx] * 3.0) : 0.0);
+  if (towns && towns.length) for (const t of towns) addTown(t.x, t.z, heights[t.idx] > waterLevel ? (rawHeights[t.idx] * 3.0) : 0.0);
 
   const ruinMat = new THREE.MeshLambertMaterial({ color: 0x888899 });
   if (region.ruins && region.ruins.length) {
     for (const r of region.ruins) {
       const n = 3 + Math.floor(Math.random() * 3);
+      const terrainY = heights[r.idx] > waterLevel ? (rawHeights[r.idx] * 3.0) : 0.0;
       for (let i = 0; i < n; i++) {
         const h = 0.4 + Math.random() * 0.8;
         const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.25 + Math.random() * 0.2, 0.3 + Math.random() * 0.2, h, 6), ruinMat);
         const angle = (i / n) * Math.PI * 2;
         const dist = 0.6 + Math.random() * 1.2;
-        pillar.position.set(r.x + Math.cos(angle) * dist, h / 2, r.z + Math.sin(angle) * dist);
+        pillar.position.set(r.x + Math.cos(angle) * dist, terrainY + h / 2, r.z + Math.sin(angle) * dist);
         pillar.rotation.y = Math.random() * Math.PI;
         pillar.castShadow = true;
         group.add(pillar);
@@ -159,7 +161,7 @@ export function buildSettlements(region) {
   if (region.minorRuins && region.minorRuins.length) {
     for (const r of region.minorRuins) {
       const obelisk = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.4, 3.5, 6), obeliskMat);
-      const terrainY = heights[r.idx] > waterLevel ? 0.1 : 0.0;
+      const terrainY = heights[r.idx] > waterLevel ? (rawHeights[r.idx] * 3.0) : 0.0;
       obelisk.position.set(r.x, terrainY + 1.75, r.z);
       obelisk.castShadow = true;
       group.add(obelisk);
@@ -170,8 +172,9 @@ export function buildSettlements(region) {
 }
 
 export function buildBiomeViewMesh(region) {
-  const { pts, triangles, heights, heightMax, waterLevel, biome } = region;
+  const { pts, triangles, heights, rawHeights, heightMax, waterLevel, biome } = region;
   const maxLandH = Math.max(heightMax - waterLevel, 0.001);
+  const TERRAIN_Y_SCALE = 3.0;
   const triCount = triangles.length / 3;
 
   const positions = new Float32Array(triCount * 3 * 3);
@@ -194,7 +197,7 @@ export function buildBiomeViewMesh(region) {
     for (let k = 0; k < 3; k++) {
       const vi = [i0, i1, i2][k];
       const rawH = heights[vi];
-      const y = rawH > waterLevel ? 0.1 : 0.0;
+      const y = rawH > waterLevel ? (rawHeights[vi] * TERRAIN_Y_SCALE) : 0.0;
       const pi = idx + k * 3;
       positions[pi] = pts[vi][0];
       positions[pi + 1] = y;
@@ -228,14 +231,14 @@ export function buildBiomeViewMesh(region) {
 }
 
 export function buildTrouble(region) {
-  const { trouble, heights, waterLevel } = region;
+  const { trouble, heights, rawHeights, waterLevel } = region;
   const group = new THREE.Group();
   group.name = 'trouble';
   if (!trouble || trouble.length === 0) return group;
 
   const mat = new THREE.MeshLambertMaterial({ color: 0xcc2222 });
   for (const t of trouble) {
-    const terrainY = heights[t.idx] > waterLevel ? 0.1 : 0.0;
+      const terrainY = heights[t.idx] > waterLevel ? (rawHeights[t.idx] * 3.0) : 0.0;
     const pyramid = new THREE.Mesh(new THREE.ConeGeometry(0.8, 1.5, 4), mat);
     pyramid.position.set(t.x, terrainY + 0.5, t.z);
     pyramid.rotation.x = Math.PI;
@@ -249,14 +252,14 @@ export function buildTrouble(region) {
 }
 
 export function buildResources(region) {
-  const { resources, heights, waterLevel } = region;
+  const { resources, heights, rawHeights, waterLevel } = region;
   const group = new THREE.Group();
   group.name = 'resources';
   if (!resources || resources.length === 0) return group;
 
   const mat = new THREE.MeshLambertMaterial({ color: 0xffd700 });
   for (const res of resources) {
-    const terrainY = heights[res.idx] > waterLevel ? 0.1 : 0.0;
+      const terrainY = heights[res.idx] > waterLevel ? (rawHeights[res.idx] * 3.0) : 0.0;
     const y = terrainY + 2.0;
     const octa = new THREE.Mesh(new THREE.OctahedronGeometry(1.2, 0), mat);
     octa.position.set(res.x, y, res.z);
@@ -269,7 +272,7 @@ export function buildResources(region) {
 }
 
 export function buildSiteFeatures(region) {
-  const { outpostSites, landmarkSites, hazards, obstacles, areas, heights, waterLevel } = region;
+  const { outpostSites, landmarkSites, hazards, obstacles, areas, heights, rawHeights, waterLevel } = region;
   const group = new THREE.Group();
   group.name = 'siteFeatures';
 
@@ -282,7 +285,7 @@ export function buildSiteFeatures(region) {
   if (outpostSites && outpostSites.length) {
     for (const s of outpostSites) {
       const wall = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.5, 0.8, 6), outpostMat);
-      const terrainY = heights[s.idx] > waterLevel ? 0.1 : 0.0;
+      const terrainY = heights[s.idx] > waterLevel ? (rawHeights[s.idx] * 3.0) : 0.0;
       wall.position.set(s.x, terrainY + 0.4, s.z);
       wall.castShadow = true;
       group.add(wall);
@@ -295,7 +298,7 @@ export function buildSiteFeatures(region) {
 
   if (landmarkSites && landmarkSites.length) {
     for (const s of landmarkSites) {
-      const terrainY = heights[s.idx] > waterLevel ? 0.1 : 0.0;
+      const terrainY = heights[s.idx] > waterLevel ? (rawHeights[s.idx] * 3.0) : 0.0;
       const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.3, 1.5, 6), landmarkMat);
       pillar.position.set(s.x, terrainY + 0.75, s.z);
       pillar.castShadow = true;
@@ -306,7 +309,7 @@ export function buildSiteFeatures(region) {
   if (hazards && hazards.length) {
     for (const h of hazards) {
       if (h.regionWide) continue;
-      const terrainY = heights[h.idx] > waterLevel ? 0.1 : 0.0;
+      const terrainY = heights[h.idx] > waterLevel ? (rawHeights[h.idx] * 3.0) : 0.0;
       const pyramid = new THREE.Mesh(new THREE.ConeGeometry(0.6, 1.0, 4), hazardMat);
       pyramid.position.set(h.x, terrainY + 0.3, h.z);
       pyramid.rotation.x = Math.PI;
@@ -318,7 +321,7 @@ export function buildSiteFeatures(region) {
 
   if (obstacles && obstacles.length) {
     for (const o of obstacles) {
-      const terrainY = heights[o.idx] > waterLevel ? 0.1 : 0.0;
+      const terrainY = heights[o.idx] > waterLevel ? (rawHeights[o.idx] * 3.0) : 0.0;
       const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.3, 1.2, 6), obstacleMat);
       pillar.position.set(o.x, terrainY + 0.6, o.z);
       pillar.castShadow = true;
@@ -328,14 +331,14 @@ export function buildSiteFeatures(region) {
 
   if (areas && areas.length) {
     for (const a of areas) {
-      const terrainY = heights[a.idx] > waterLevel ? 0.1 : 0.0;
+      const terrainY = heights[a.idx] > waterLevel ? (rawHeights[a.idx] * 3.0) : 0.0;
       const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.3, 1.2, 6), obstacleMat);
       pillar.position.set(a.x, terrainY + 0.6, a.z);
       pillar.castShadow = true;
       group.add(pillar);
       if (a.neighbors) {
         for (const n of a.neighbors) {
-          const nY = heights[n.idx] > waterLevel ? 0.1 : 0.0;
+          const nY = heights[n.idx] > waterLevel ? (rawHeights[n.idx] * 3.0) : 0.0;
           const np = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.3, 1.0, 6), obstacleMat);
           np.position.set(n.x, nY + 0.5, n.z);
           np.castShadow = true;
