@@ -4,7 +4,7 @@
 //
 // Templates: island, archipelago, bay, coast, fjord, peninsula, lake, land
 
-import { Vec2 } from './03_grid.js';
+import { Vec2 } from './grid.js';
 
 // ---- Helper: smoothstep ----
 function smoothstep(edge0, edge1, x) {

@@ -3,8 +3,8 @@
 //   1. Fractal midpoint displacement — subdivides each edge, displaces midpoint perpendicularly
 //   2. Chaikin curve smoothing — 2 passes of corner-cutting subdivision
 
-import { Vec2 } from './03_grid.js';
-import { smoothstep } from './04_raisers.js';
+import { Vec2 } from '../grid.js';
+import { smoothstep } from '../raisers.js';
 
 // ---- Fractal midpoint displacement on a polygon ----
 export function fractalMidpointDisplace(points, iterations = 4, roughness = 0.7) {

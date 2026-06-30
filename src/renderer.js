@@ -47,7 +47,7 @@ export function createScene(canvas, region) {
   // ---- Terrain mesh ----
   const state = { scene, camera, renderer, controls, extentScale: s };
 
-  import('./07_mesher.js').then(({ buildTerrainMesh, buildRiverMesh, buildTrees, buildSettlements, buildResources, buildTrouble, buildSiteFeatures }) => {
+    import('./mesh/mesher.js').then(({ buildTerrainMesh, buildRiverMesh, buildTrees, buildSettlements, buildResources, buildTrouble, buildSiteFeatures }) => {
     const terrainMesh = buildTerrainMesh(region);
     terrainMesh.receiveShadow = true;
     scene.add(terrainMesh);
@@ -65,7 +65,7 @@ export function createScene(canvas, region) {
   });
 
   // ---- Mesh feature objects (mountains, forests from meshDev) ----
-  import('./16_mesh_features.js').then(({ buildMeshMountains, buildMeshForests }) => {
+   import('./mesh/mesh_features.js').then(({ buildMeshMountains, buildMeshForests }) => {
 const mountainGroup = buildMeshMountains(region);
 mountainGroup.name = 'meshMountains';
 scene.add(mountainGroup);

@@ -27,18 +27,18 @@ Perilous 3D generates a  **50–400 km configurable** map (default 320×320 km) 
 ```
 index.html
 └── src/
-    ├── 01_prng.js      — seedFromString (legacy, kept for main.js)
-    ├── 02_noise.js     — Perlin + FractalNoise (retained, unused by current pipeline)
-    ├── 03_grid.js      — Vec2, hex grid, DCEL (retained, unused by current pipeline)
-    ├── 04_raisers.js   — Skeleton/midpoint-displacement raisers (retained, unused)
-    ├── 05_terrain.js   — full pipeline: Delaunay mesh → cartoon mountains (parabolic cones
+    ├── prng.js      — seedFromString (legacy, kept for main.js)
+    ├── noise.js     — Perlin + FractalNoise (retained, unused by current pipeline)
+    ├── grid.js      — Vec2, hex grid, DCEL (retained, unused by current pipeline)
+    ├── raisers.js   — Skeleton/midpoint-displacement raisers (retained, unused)
+    ├── terrain/terrain.js   — full pipeline: Delaunay mesh → cartoon mountains (parabolic cones
     │                      + Gaussian ground skirts) → island mask → peaky transform →
     │                      hydraulic erosion → fjord trench carve → sea-level cut →
     │                      sink-fill → coast clean → template-specific features
     │                      (inverted depressions: lake basin / bay blob)
     │                      + habitability scoring + cities/towns placement + resource deposits
-    ├── 06_coast.js     — Chaikin smoothing (retained, unused by current pipeline)
-      ├── 07_mesher.js    — Delaunay triangles → Three.js indexed BufferGeometry
+    ├── terrain/coast.js     — Chaikin smoothing (retained, unused by current pipeline)
+      ├── mesh/mesher.js    — Delaunay triangles → Three.js indexed BufferGeometry
      │                      + per-vertex biome colors (Azgaar 5×26 temperature × moisture matrix)
      │                      + river mesh (LineSegments along downhill edges, width ∝ √flux)
      │                      + settlement rendering (cities + towns) + resource markers (gold octahedrons)
@@ -46,16 +46,16 @@ index.html
      │                      + trouble markers (inverted red pyramids)
      │                      + site features: outpost tower, cyan landmark pillar, orange hazard pyramid,
      │                        amber obstacle/area pillars
-    ├── 08_colors.js    — PS terrain palette (used by mountain & hill tile color palettes)
-    ├── 10_renderer.js  — Three.js scene, HemisphereLight + DirectionalLight (shadows),
+    ├── mesh/colors.js    — PS terrain palette (used by mountain & hill tile color palettes)
+    ├── renderer.js  — Three.js scene, HemisphereLight + DirectionalLight (shadows),
      │                      cloud blobs (IcosahedronGeometry at Y=80–120), OrbitControls,
      │                      render loop with FPS counter
-    ├── 11_ui.js         — progress overlay, seed display, URL sync
-     ├── 17_gui.js         — lil-gui initialization: folders for Template, Parameters, Actions, Info
-       ├── 18_items.js       — locations panel (Cities, Towns, Resources, Dungeons, Ruins,
+    ├── gui/ui.js         — progress overlay, seed display, URL sync
+     ├── gui/gui.js         — lil-gui initialization: folders for Template, Parameters, Actions, Info
+       ├── gui/items.js       — locations panel (Cities, Towns, Resources, Dungeons, Ruins,
       │                         Landmarks, Outposts, Hazards, Obstacles, Areas, Trouble)
       │                         + item list + fly-to camera + zoom out
-      ├── 19_features.js    — regional feature generator: 8+2d8 features per region, each
+      ├── terrain/features.js    — regional feature generator: 8+2d8 features per region, each
      │                         rolled 1d12+safety → creature/hazard/obstacle/area/named place/
      │                         site/faction presence/settlement with sub-tables for each type
      └── main.js          — bootstrap: seed → buildRegion → createScene → animate → initGUI
@@ -175,7 +175,7 @@ Each terrain vertex is scored 0–125 based on:
 `findTowns()` places either **4 standalone towns** (no cities present) or **3 per city** within a **30 km radius**. All towns enforce **≥25 km** mutual separation. Coastal bonus (+20 habitability) and resource proximity (+15 within 15 km) also applied.
 
 ### Settlement Rendering
-`buildSettlements()` in `07_mesher.js` renders:
+`buildSettlements()` in `mesh/mesher.js` renders:
 - **Cities**: stone keep (wide low cylinder) + tower + cone roof
 - **Towns**: smaller single-wall hut + cone roof
 All placed at Y = 0.1 (land flat height).
@@ -216,7 +216,7 @@ Rendered as **gold octahedrons** (radius 1.2) floating Y = terrain + 2.0 in `bui
 Rendered as **inverted red pyramids** (`ConeGeometry` rotated π) in `buildTrouble()`.
 
 ### Regional Features
-`generateFeatures()` in `19_features.js` generates `8 + 2d8` narrative features per region — prompts for the Judge to develop during play. Each feature is rolled `1d12 + safety`, mapping to:
+`generateFeatures()` in `terrain/features.js` generates `8 + 2d8` narrative features per region — prompts for the Judge to develop during play. Each feature is rolled `1d12 + safety`, mapping to:
 
 - **1–4 Creature**: sub-type rolled 1d12 → Monster (legendary/extraplanar/undead/fearsome), Beast (water-going/airborne/earthbound), or Humanoid (rare/uncommon/common)
 - **5 Hazard**: 1d10 category (unnatural → taint/magical/planar/divine; natural → oddity/tectonic/precipitous/ensnaring/defensive/meteorological/seasonal/impairing)
@@ -227,13 +227,13 @@ Rendered as **inverted red pyramids** (`ConeGeometry` rotated π) in `buildTroub
 - **12 Faction Presence**: 1d10 faction type, 1d8 primary goal, 1d6 condition
 - **13+ Settlement**: placeholder for settlement generation
 
-Site → resource and site → ruin/dungeon features are resolved in `buildRegion()` using `generateResources()` and `findRuins()`/`findMinorRuins()` from `05_terrain.js`, placing actual map resources, minor ruins, and great ruins at the generated locations. Named place, site→landmark, site→ruin, and site→dungeon all call `generatePlaceName()` (exported from `19_features.js`) to produce names like "The Broken Tower" or "The Doomed Gate".
+Site → resource and site → ruin/dungeon features are resolved in `buildRegion()` using `generateResources()` and `findRuins()`/`findMinorRuins()` from `terrain/terrain.js`, placing actual map resources, minor ruins, and great ruins at the generated locations. Named place, site→landmark, site→ruin, and site→dungeon all call `generatePlaceName()` (exported from `terrain/features.js`) to produce names like "The Broken Tower" or "The Doomed Gate".
 
 Outpost → `placeSiteFeature()` helper (random land cell ≥15 km from cities/towns, tracked for mutual separation). Landmark → `generatePlaceName()` + `placeSiteFeature()`, stored in `region.landmarkSites[]` with name. Named place → 1d2 roll: ruin (pushed to `region.minorRuins[]`) or landmark (pushed to `region.landmarkSites[]`). Lair/dwelling → pushes a trouble marker with type `'lair'` to `region.trouble[]`.
 
 Hazard/obstacle/area features roll a terrain type (`land`/`mountains`/`hills`/`forest`/`river`/`water`), filter sub-type against terrain compatibility (checking `hazardCompatibleWithTerrain()` / `obstacleCompatibleWithTerrain()` / `areaCompatibleWithTerrain()`), then find matching cells via `findCellsByTerrain()` and place markers. Meteorological hazards are region-wide (no marker). Area markers include neighbor cells within ~3 km to suggest extent. All placed features enforce ≥15 km from any city or town and ≥10 km from other same-type markers.
 
-Outpost, landmark, hazard, obstacle, and area data is stored in `region.outpostSites[]`, `region.landmarkSites[]`, `region.hazards[]`, `region.obstacles[]`, `region.areas[]` respectively, and rendered by `buildSiteFeatures()` in `07_mesher.js`:
+Outpost, landmark, hazard, obstacle, and area data is stored in `region.outpostSites[]`, `region.landmarkSites[]`, `region.hazards[]`, `region.obstacles[]`, `region.areas[]` respectively, and rendered by `buildSiteFeatures()` in `mesh/mesher.js`:
 - **Outpost**: gray stone cylinder + red cone roof tower (`CylinderGeometry(0.4,0.5,0.8)` + `ConeGeometry(0.5,0.3)`)
 - **Landmark**: cyan emissive pillar (`CylinderGeometry(0.2,0.3,1.5)`, emissive color `0x44ddff`)
 - **Hazard**: orange inverted pyramid (`ConeGeometry(0.6,1.0,4)`, color `0xdd6633`)
@@ -241,7 +241,7 @@ Outpost, landmark, hazard, obstacle, and area data is stored in `region.outpostS
 
 ## Algorithm Notes
 
-**PRNG** — Mulberry32 seeded RNG for deterministic generation (embedded in `05_terrain.js`).
+**PRNG** — Mulberry32 seeded RNG for deterministic generation (embedded in `terrain/terrain.js`).
 
 **Delaunay Triangulation** — [Delaunator](https://github.com/mapbox/delaunator) provides mesh topology from random points (scales with map area: ~3K minimum, ~15–20K at 320 km, ~23–31K at 400 km).
 
@@ -259,21 +259,21 @@ Outpost, landmark, hazard, obstacle, and area data is stored in `region.outpostS
 - **Bay**: Wide gaussian blob (radius 35–65 km, depth 0.2–0.4) placed near a random map edge. Creates a large bay opening.
 - **Land**: No carve; heights are clamped to ≥ 0 (no cells at exactly 0), producing a fully continental terrain without ocean.
 
-**Rivers** — Downhill flow accumulation on the Delaunay graph (`computeRivers()` in `05_terrain.js`). Each land point starts with unit flow, accumulates downstream via sorted height traversal. Points in the top 10% of accumulated flow become river channels. River segments follow downhill edges between river points and are rendered as blue `LineSegments` slightly above the terrain surface, with width proportional to √flux.
+**Rivers** — Downhill flow accumulation on the Delaunay graph (`computeRivers()` in `terrain/terrain.js`). Each land point starts with unit flow, accumulates downstream via sorted height traversal. Points in the top 10% of accumulated flow become river channels. River segments follow downhill edges between river points and are rendered as blue `LineSegments` slightly above the terrain surface, with width proportional to √flux.
 
-**Moisture** — Azgaar-style two-phase computation (`computeMoisture()` in `05_terrain.js`). Phase A: BFS from rivers (10), ocean (8), and coast-adjacent land (7) with exponential decay (0.94× per hop inland). Phase B: neighbor averaging with river flux bonus (`4 + mean(raw + max(flux/10, 2), neighbors)`). Output range ~4–50, stored in `region.moisture`.
+**Moisture** — Azgaar-style two-phase computation (`computeMoisture()` in `terrain/terrain.js`). Phase A: BFS from rivers (10), ocean (8), and coast-adjacent land (7) with exponential decay (0.94× per hop inland). Phase B: neighbor averaging with river flux bonus (`4 + mean(raw + max(flux/10, 2), neighbors)`). Output range ~4–50, stored in `region.moisture`.
 
-**Temperature** — `computeTemperature()` in `05_terrain.js`. Base temp parameter (±0.5°C latitudinal gradient across map extent, south hot / north cold) with elevation lapse rate (−10°C max). Mapped to Azgaar's 26-band scale: `tempBand = round(clamp(20 − t, 0, 25))`. Stored in `region.temperature` and `region.tempBand`.
+**Temperature** — `computeTemperature()` in `terrain/terrain.js`. Base temp parameter (±0.5°C latitudinal gradient across map extent, south hot / north cold) with elevation lapse rate (−10°C max). Mapped to Azgaar's 26-band scale: `tempBand = round(clamp(20 − t, 0, 25))`. Stored in `region.temperature` and `region.tempBand`.
 
-**Biomes** — `biomeId()` in `05_terrain.js` uses Azgaar's exact 5×26 biome matrix (5 moisture bands × 26 temperature bands). Overrides: normH < 0 → Marine (0), normH > 0.80 → Glacier (11). Produces 13 biomes: Marine, Hot desert, Cold desert, Savanna, Grassland, Tropical seasonal forest, Temperate deciduous forest, Tropical rainforest, Temperate rainforest, Taiga, Tundra, Glacier, Wetland. Colors looked up via `BIOME_COLORS[13]` array in `07_mesher.js`.
+**Biomes** — `biomeId()` in `terrain/terrain.js` uses Azgaar's exact 5×26 biome matrix (5 moisture bands × 26 temperature bands). Overrides: normH < 0 → Marine (0), normH > 0.80 → Glacier (11). Produces 13 biomes: Marine, Hot desert, Cold desert, Savanna, Grassland, Tropical seasonal forest, Temperate deciduous forest, Tropical rainforest, Temperate rainforest, Taiga, Tundra, Glacier, Wetland. Colors looked up via `BIOME_COLORS[13]` array in `mesh/mesher.js`.
 
-**Forests** — `buildMeshForests()` in `16_mesh_features.js` filters terrain vertices by normalized elevation (0.06–0.55), then applies a biome-index density lookup (`FOREST_DENSITY` array) with a 0.5 survival multiplier. Candidate points are clustered using a centroid-growing algorithm (8 km radius, min 5 per cluster). Each cluster centroid receives an InstancedMesh forest group via `generateForest()` from `15_mesh_tree.js`, which varies tree appearance by dominant biome (Taiga: tall trunk, narrow conical canopy, dark green; Rainforest: tall, large round canopy, deep green; Savanna: short trunk, wide flat canopy, yellow-green; Deciduous: medium, round, includes autumn hues).
+**Forests** — `buildMeshForests()` in `mesh/mesh_features.js` filters terrain vertices by normalized elevation (0.06–0.55), then applies a biome-index density lookup (`FOREST_DENSITY` array) with a 0.5 survival multiplier. Candidate points are clustered using a centroid-growing algorithm (8 km radius, min 5 per cluster). Each cluster centroid receives an InstancedMesh forest group via `generateForest()` from `mesh/mesh_tree.js`, which varies tree appearance by dominant biome (Taiga: tall trunk, narrow conical canopy, dark green; Rainforest: tall, large round canopy, deep green; Savanna: short trunk, wide flat canopy, yellow-green; Deciduous: medium, round, includes autumn hues).
 
-**Great Ruins** — `findRuins()` in `05_terrain.js` picks 1–2 high-habitability land cells near existing settlements (within 60 km), avoiding occupied city/town cells (30 km exclusion) and enforcing ≥30 km separation between ruins themselves. Rendered as clusters of broken stone pillars in `buildSettlements()`.
+**Great Ruins** — `findRuins()` in `terrain/terrain.js` picks 1–2 high-habitability land cells near existing settlements (within 60 km), avoiding occupied city/town cells (30 km exclusion) and enforcing ≥30 km separation between ruins themselves. Rendered as clusters of broken stone pillars in `buildSettlements()`.
 
 **Minor Ruins** — `findMinorRuins()` scatters 4 + 1d6 (5–10) tall gray obelisks at random land cells, spaced ≥20 km apart, count scaled by map area. Rendered as `CylinderGeometry(0.3, 0.4, 3.5)` standing at terrain Y + 1.75.
 
-**Trouble** — `findTrouble()` in `05_terrain.js` places danger markers: exactly 1 per resource (worst habitability within ~20 km), plus safety-scaled extras (scaled by map area) — Perilous=6, Dangerous=4, Unsafe=2, Safe=0 at default 320 km. Half the extras land within ~30 km of a city/town (worst habitability), the other half on random ruin sites. All trouble cells are ≥15 km from any city or town (added to the inner `addTrouble()` function). Lair/dwelling features from the resolution loop also push a `'lair'` trouble marker using the same distance constraints. Rendered as inverted red pyramids (`ConeGeometry` rotated π) in `buildTrouble()`.
+**Trouble** — `findTrouble()` in `terrain/terrain.js` places danger markers: exactly 1 per resource (worst habitability within ~20 km), plus safety-scaled extras (scaled by map area) — Perilous=6, Dangerous=4, Unsafe=2, Safe=0 at default 320 km. Half the extras land within ~30 km of a city/town (worst habitability), the other half on random ruin sites. All trouble cells are ≥15 km from any city or town (added to the inner `addTrouble()` function). Lair/dwelling features from the resolution loop also push a `'lair'` trouble marker using the same distance constraints. Rendered as inverted red pyramids (`ConeGeometry` rotated π) in `buildTrouble()`.
 
 ## License
 

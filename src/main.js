@@ -3,12 +3,12 @@
 import Chance from 'https://cdn.jsdelivr.net/npm/chance@1.1.11/+esm';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { seedFromString } from './01_prng.js';
-import { buildRegion } from './05_terrain.js';
-import { createScene, animate } from './10_renderer.js';
-import { progressPanel, updateSeedDisplay } from './11_ui.js';
-import { initGUI } from './17_gui.js';
-import { initItemsPanel } from './18_items.js';
+import { seedFromString } from './prng.js';
+import { buildRegion } from './terrain/terrain.js';
+import { createScene, animate } from './renderer.js';
+import { progressPanel, updateSeedDisplay } from './gui/ui.js';
+import { initGUI } from './gui/gui.js';
+import { initItemsPanel } from './gui/items.js';
 
 const app = { sceneState: null, seed: null, seedStr: null };
 

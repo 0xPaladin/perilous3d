@@ -1,5 +1,5 @@
 import Delaunator from 'delaunator';
-import { generateFeatures, generatePlaceName } from './19_features.js';
+import { generateFeatures, generatePlaceName } from './features.js';
 
 function createRng(seed) {
   let s = seed | 0;

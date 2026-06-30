@@ -1,7 +1,7 @@
 import * as THREE from 'three';
-import { generateMountainTile, createMountainTileMesh } from './13_mesh_mountain.js';
-import { generateHillTile, createTerrainTileMesh, HILL_PALETTE } from './14_mesh_terrain.js';
-import { generateForest } from './15_mesh_tree.js';
+import { generateMountainTile, createMountainTileMesh } from './mesh_mountain.js';
+import { generateHillTile, createTerrainTileMesh, HILL_PALETTE } from './mesh_terrain.js';
+import { generateForest } from './mesh_tree.js';
 
 function mulberry32(seed) {
   let s = seed | 0;

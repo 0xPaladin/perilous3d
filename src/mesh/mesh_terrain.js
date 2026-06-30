@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { TERRAIN, TERRAIN_COLORS } from './08_colors.js';
+import { TERRAIN, TERRAIN_COLORS } from './colors.js';
 
 const tc = t => TERRAIN_COLORS[t];
 
