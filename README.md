@@ -31,11 +31,13 @@ index.html
     ├── noise.js     — Perlin + FractalNoise (retained, unused by current pipeline)
     ├── grid.js      — Vec2, hex grid, DCEL (retained, unused by current pipeline)
     ├── raisers.js   — Skeleton/midpoint-displacement raisers (retained, unused)
-    ├── terrain/terrain.js   — full pipeline: Delaunay mesh → cartoon mountains (parabolic cones
-    │                      + Gaussian ground skirts) → island mask → peaky transform →
-    │                      hydraulic erosion → fjord trench carve → sea-level cut →
-    │                      sink-fill → coast clean → template-specific features
-    │                      (inverted depressions: lake basin / bay blob)
+    ├── terrain/terrain.js   — full pipeline (queue-based command architecture):
+    │                      Terrain state commands (Scale/Rainfall) + template scripts
+    │                      (Hill/Range/Apply/Mask/SeaLevel/Fjord/Lake/Bay/LandClamp)
+    │                      → parseCommand → processTerrainCommands
+    │                      → Delaunay mesh → cartoon mountains → island mask → peaky →
+    │                      hydraulic erosion → fjord/lake/bay/land features → sea-level →
+    │                      sink-fill → coast clean
     │                      + habitability scoring + cities/towns placement + resource deposits
     ├── terrain/coast.js     — Chaikin smoothing (retained, unused by current pipeline)
       ├── mesh/mesher.js    — Delaunay triangles → Three.js indexed BufferGeometry
@@ -51,10 +53,10 @@ index.html
      │                      cloud blobs (IcosahedronGeometry at Y=80–120), OrbitControls,
      │                      render loop with FPS counter
     ├── gui/ui.js         — progress overlay, seed display, URL sync
-     ├── gui/gui.js         — lil-gui initialization: folders for Template, Parameters, Actions, Info
-       ├── gui/items.js       — locations panel (Cities, Towns, Resources, Dungeons, Ruins,
-      │                         Landmarks, Outposts, Hazards, Obstacles, Areas, Trouble)
-      │                         + item list + fly-to camera + zoom out
+      ├── gui/gui.js         — lil-gui initialization: folders for Template, Parameters, Actions, Info
+      ├── gui/items.js       — locations panel (Cities, Towns, Resources, Dungeons, Ruins,
+       │                         Landmarks, Outposts, Hazards, Obstacles, Areas, Trouble)
+       │                         + item list + fly-to camera + zoom out
       ├── terrain/features.js    — regional feature generator: 8+2d8 features per region, each
      │                         rolled 1d12+safety → creature/hazard/obstacle/area/named place/
      │                         site/faction presence/settlement with sub-tables for each type
@@ -66,17 +68,19 @@ index.html
 ```
 Seed → ChanceJS PRNG → points scaled by map area (~3000 at 50 km, ~15000 at 320 km)
      → Delaunator triangulation → adjacency graph
-     → Terrain preset (wetland/lowland/woodland/highland/wasteland)
-         → determines mountain count (#/height/distribution) + overall rainfall
-         → clustered range-based mountains as before
-      → Baseline subtraction (min → 0)
-      → Island mask (smoothstep + angular perturbation, per-template radius/offset)
-      → Normalize [0,1] → sqrt (peaky)
-      → 8× hydraulic erosion (flux + slope → fill sinks)
-      → Fjord trench carve (before sea-level, always below water cutoff)
-      → Sea-level cut (quantile per template)
-      → Fill sinks → clean coast (remove 1-cell artifacts)
-      → Template-specific features (lake basin / bay blob inverted depressions)
+     → Terrain preset (wetland/lowland/woodland/highland/wasteland) + Map template (island/archipelago/bay/fjord/lake/land)
+         → terrain state commands (Scale/Rainfall) + template command script (Hill/Range/Apply/Mask/SeaLevel/Fjord/Lake/Bay/LandClamp)
+         → parseCommand → processTerrainCommands
+             → queue-based mountain/ridge generation: Hill/Pit push circular features, Range/Trough push ridgeline
+               with sinusoidal wiggle + branching spurs, Apply flushes queue with shapePower/noiseAmp
+             → height field
+       → Baseline subtraction (min → 0)
+       → Island mask (smoothstep + angular perturbation, per-template radius/offset)
+       → Normalize [0,1] → sqrt (peaky)
+       → 8× hydraulic erosion (flux + slope → fill sinks)
+       → Fjord/Lake/Bay carve or LandClamp (template-specific, per commands)
+       → Sea-level cut (quantile per template)
+       → Fill sinks → clean coast (remove 1-cell artifacts)
        → Rivers (downhill flux accumulation) → Moisture (Azgaar BFS + neighbor averaging) × terrain rainfall
        → Temperature (latitudinal + elevation lapse) → Biomes (Azgaar 5×26 matrix)
        → Habitability (biome × elevation × slope × water proximity, 0–125)
@@ -92,7 +96,7 @@ Seed → ChanceJS PRNG → points scaled by map area (~3000 at 50 km, ~15000 at 
            → Named place: 1d2 → ruin (minorRuins) or landmark (landmarkSites), carries name
            → Faction presence: random city/town selected, stored in factionSites[]
            → Lair/dwelling: push trouble marker with type from TROUBLE_TYPES
-         → Per-vertex heights, indexed mesh, vertex colors by biome index
+           → Per-vertex heights, indexed mesh, vertex colors by biome index
 ```
 
 ### Per-Template Configuration
@@ -245,7 +249,7 @@ Outpost, landmark, hazard, obstacle, and area data is stored in `region.outpostS
 
 **Delaunay Triangulation** — [Delaunator](https://github.com/mapbox/delaunator) provides mesh topology from random points (scales with map area: ~3K minimum, ~15–20K at 320 km, ~23–31K at 400 km).
 
-**Cartoon Mountains** — Each mountain is a **parabolic cone** (`max(0, 1 − d²/r²)`) giving a sharp peak with no fuzzy tails, plus a wide **Gaussian skirt** at 20% amplitude to raise the surrounding ground. This produces distinct, steep peaks with continuous rolling terrain between them. Radii vary 1.2–5 km per cone. Peaks are **clustered along 2–6 range backbones** (lines defined by center, angle, length, and width). Per-template configurations control range count, length, width, and spatial spread. 15% of peaks are random outliers (foothills and isolated cones).
+**Cartoon Mountains** — Generated via a **queue-based command architecture** (`TEMPLATE_SCRIPTS` + `TERRAIN_STATE_CMDS` → `parseCommand()` → `processTerrainCommands()`). Hill/Pit commands push circular features to a queue; Range/Trough commands generate ridgelines with sinusoidal wiggle and branching spurs; `Apply shapePower, noiseAmp` flushes the queue, rendering all queued features to the height field via `mountainFalloff()` with power-law `max(0, 1−t²)^shapePower` core + linear skirt (r→2r, 3.5% strength), plus per-point noise jitter (±noiseAmp). Radii vary 2.5–12.5 km. Ridgelines use sinusoidal wiggle (`wiggleFreq × wiggleAmp`) and branching prominence spurs (perpendicular segments every ~20 km). Multiple Apply batches per template enable layered terrain (e.g., broad fjord trough at low shapePower, then sharp hills at higher shapePower).
 
 **Island Mask** — A smoothstep multiplier (`1 − t²(3−2t)`) based on distance from center, with **angular perturbation** (4-frequency sine waves) to create jagged coastlines with bays, headlands, and fjord channels. Per-template configs control base radius, center offset, and perturbation amplitudes. Templates marked "full map" use radius ≥ 1.0× extent so the terrain fills the entire configurable map area.
 

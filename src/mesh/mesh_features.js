@@ -55,14 +55,14 @@ export function buildMeshMountains(region) {
       const mesh = createMountainTileMesh(tile, tileH);
       const yScale = m.r * 0.35;
       mesh.scale.set(xyScale, yScale, xyScale);
-      mesh.position.set(m.x, 0.0, m.y);
+      mesh.position.set(m.x, -0.005, m.y);
       group.add(mesh);
     } else {
       const tile = generateHillTile(prng, 0, 0, tileH, 10);
       const mesh = createTerrainTileMesh(tile, tileH, HILL_PALETTE);
       const yScale = m.r * 0.18;
       mesh.scale.set(xyScale, yScale, xyScale);
-      mesh.position.set(m.x, 0.0, m.y);
+      mesh.position.set(m.x, -0.005, m.y);
       group.add(mesh);
     }
   }
@@ -73,10 +73,12 @@ export function buildMeshMountains(region) {
 const FOREST_DENSITY = [0, 0, 0, 0.2, 0.2, 0.7, 0.7, 1.0, 1.0, 0.5, 0.05, 0, 0.4];
 
 export function buildMeshForests(region) {
-  const { pts, heights, waterLevel, heightMax, biome, seed } = region;
+  const { pts, heights, waterLevel, heightMax, biome, seed, extent } = region;
   const group = new THREE.Group();
   if (!pts || !biome) return group;
 
+  const extentSize = extent?.width || 320;
+  const extentScale = extentSize / 320;
   const maxLandH = Math.max(heightMax - waterLevel, 0.001);
 
   const candidatePoints = [];
@@ -96,8 +98,8 @@ export function buildMeshForests(region) {
     }
   }
 
-  const CLUSTER_RADIUS = 8;
-  const MIN_CLUSTER_SIZE = 5;
+  const CLUSTER_RADIUS = 8 * extentScale;
+  const MIN_CLUSTER_SIZE = Math.max(3, Math.round(5 * extentScale));
   const forestClusters = [];
   const used = new Uint8Array(candidatePoints.length);
 
@@ -154,6 +156,9 @@ export function buildMeshForests(region) {
 
   for (let ci = 0; ci < forestClusters.length; ci++) {
     const fc = forestClusters[ci];
+
+    const centroidH = findNearestHeight(fc.cx, fc.cz, pts, heights);
+    if (centroidH <= waterLevel) continue;
 
     let obstructed = false;
     for (const s of settlements) {

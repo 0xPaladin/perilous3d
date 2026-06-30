@@ -79,97 +79,309 @@ function cone(pts, slopeVal) {
   return h;
 }
 
-const TERRAIN_CONFIGS = {
-  wetland:   { count: [10, 40], heightScale: 0.5, rainfall: 1.8, ranges: [1, 2], len: [20, 60], width: [4, 12], outlier: 0.05, spread: 0.15 },
-  lowland:   { count: [20, 80], heightScale: 0.8, rainfall: 1.0, ranges: [1, 3], len: [30, 100], width: [6, 16], outlier: 0.10, spread: 0.20 },
-  woodland:  { count: [40, 120], heightScale: 1.0, rainfall: 1.3, ranges: [2, 4], len: [40, 130], width: [4, 18], outlier: 0.12, spread: 0.25 },
-  highland:  { count: [100, 300], heightScale: 1.5, rainfall: 0.8, ranges: [2, 4], len: [40, 130], width: [4, 18], outlier: 0.15, spread: 0.25 },
-  wasteland: { count: [5, 30], heightScale: 0.6, rainfall: 0.4, ranges: [1, 3], len: [30, 100], width: [10, 25], outlier: 0.20, spread: 0.30 },
+const TERRAIN_STATE_CMDS = {
+  wetland:   ['Scale 0.5', 'Rainfall 1.8'],
+  lowland:   ['Scale 0.8', 'Rainfall 1.0'],
+  woodland:  ['Scale 1.0', 'Rainfall 1.3'],
+  highland:  ['Scale 1.5', 'Rainfall 0.8'],
+  wasteland: ['Scale 0.6', 'Rainfall 0.4'],
 };
 
-function mountains(pts, extent, n, rng, terrain, template) {
-  const tc = TERRAIN_CONFIGS[terrain] || TERRAIN_CONFIGS.highland;
-  const fallback = {
-    island: { ranges: [2, 4], len: [40, 130], width: [4, 18], outlier: 0.15, spread: 0.25 },
-    archipelago: { ranges: [4, 6], len: [15, 60], width: [2, 8], outlier: 0.10, spread: 0.35 },
-    bay: { ranges: [1, 3], len: [50, 140], width: [6, 20], outlier: 0.10, spread: 0.20 },
-    fjord: { ranges: [3, 5], len: [40, 100], width: [2, 6], outlier: 0.08, spread: 0.20 },
-    lake: { ranges: [2, 4], len: [40, 120], width: [4, 14], outlier: 0.10, spread: 0.25 },
-    land: { ranges: [3, 6], len: [80, 200], width: [8, 28], outlier: 0.20, spread: 0.35 },
-  };
-  const c = {
-    ranges: tc.ranges,
-    len: tc.len,
-    width: tc.width,
-    outlier: tc.outlier,
-    spread: tc.spread,
-  };
+const TEMPLATE_SCRIPTS = {
+  island: [
+    'Hill 5, 0.5, 30-70, 30-70',
+    'Hill 3, 0.3, 20-30, 10-30',
+    'Hill 3, 0.3, 70-80, 70-80',
+    'Apply 0.7, 0.15',
+    'Mask island',
+    'SeaLevel 0.40',
+  ],
+  archipelago: [
+    'Hill 10, 0.4, 10-90, 10-90',
+    'Apply 0.6, 0.15',
+    'Mask archipelago',
+    'SeaLevel 0.55',
+  ],
+  bay: [
+    'Hill 6, 0.5, 30-70, 30-70',
+    'Apply 0.6, 0.15',
+    'Mask land',
+    'SeaLevel 0.005',
+    'Bay',
+  ],
+  fjord: [
+    'Trough 1, 0.6, 40-60, 10-90',
+    'Apply 0.2, 0.05',
+    'Hill 8, 0.4, 10-90, 10-90',
+    'Hill 4, 0.6, 10-90, 10-90',
+    'Apply 0.35, 0.12',
+    'Mask land',
+    'SeaLevel 0.01',
+    'Fjord',
+  ],
+  lake: [
+    'Hill 8, 0.4, 20-80, 20-80',
+    'Apply 0.5, 0.15',
+    'Mask land',
+    'SeaLevel 0.005',
+    'Lake',
+  ],
+  land: [
+    'Hill 10, 0.6, 10-90, 10-90',
+    'Apply 0.5, 0.15',
+    'Mask land',
+    'SeaLevel 0.0',
+    'LandClamp',
+  ],
+};
 
+const MASK_CONFIGS = {
+  island: { radius: 0.44, offX: 0, offY: 0, amp: [0.18, 0.10, 0.06, 0.03] },
+  archipelago: { radius: 0.40, offX: 0, offY: 0, amp: [0.24, 0.14, 0.08, 0.04] },
+  land: { radius: 5.00, offX: 0, offY: 0, amp: [0, 0, 0, 0] },
+};
+
+function parseCommand(str) {
+  const parts = str.trim().split(/\s+/);
+  const type = parts[0].toLowerCase();
+  switch (type) {
+    case 'hill':
+    case 'pit':
+    case 'range':
+    case 'trough': {
+      const rest = str.slice(parts[0].length).trim();
+      const vals = rest.split(',').map(s => s.trim());
+      const count = parseInt(vals[0], 10);
+      const heightOrDepth = parseFloat(vals[1]);
+      const xRange = vals[2].split('-').map(s => parseInt(s, 10) / 100);
+      const yRange = vals[3].split('-').map(s => parseInt(s, 10) / 100);
+      return {
+        type,
+        count,
+        [type === 'hill' || type === 'range' ? 'height' : 'depth']: heightOrDepth,
+        xMin: xRange[0], xMax: xRange[1],
+        yMin: yRange[0], yMax: yRange[1],
+      };
+    }
+    case 'apply': {
+      const vals = str.slice(parts[0].length).trim().split(',').map(s => parseFloat(s.trim()));
+      return { type: 'apply', shapePower: vals[0], noiseAmp: vals[1] };
+    }
+    case 'scale':
+      return { type: 'scale', value: parseFloat(parts[1]) };
+    case 'rainfall':
+      return { type: 'rainfall', value: parseFloat(parts[1]) };
+    case 'mask':
+      return { type: 'mask', maskType: parts[1].toLowerCase() };
+    case 'sealevel':
+      return { type: 'sealevel', quantile: parseFloat(parts[1]) };
+    case 'fjord':
+      return { type: 'fjord' };
+    case 'lake':
+      return { type: 'lake' };
+    case 'bay':
+      return { type: 'bay' };
+    case 'landclamp':
+      return { type: 'landclamp' };
+    default:
+      console.warn('Unknown command:', type);
+      return null;
+  }
+}
+
+function perPointNoise(i, j) {
+  let h = (i * 7919 + j * 6271 + 12345) >>> 0;
+  h = ((h ^ (h >> 16)) * 0x45d9f3b) >>> 0;
+  return (h % 100000) / 100000;
+}
+
+function mountainFalloff(d, r, shapePower) {
+  const t = d / r;
+  if (t < 1) {
+    return Math.pow(Math.max(0, 1 - t * t), shapePower);
+  }
+  if (t < 2) {
+    const skirtStrength = 0.035;
+    return skirtStrength * Math.max(0, 2 - t);
+  }
+  return 0;
+}
+
+function generateHillFeatures(extent, rng, count, height, xMin, xMax, yMin, yMax, isPit) {
   const sizeScale = extent.width / 320;
-  c.len = [c.len[0] * sizeScale, c.len[1] * sizeScale];
-  c.width = [c.width[0] * sizeScale, c.width[1] * sizeScale];
-
-  const numRanges = c.ranges[0] + Math.floor(rng() * (c.ranges[1] - c.ranges[0] + 1));
-  const ranges = [];
-  for (let r = 0; r < numRanges; r++) {
-    const cx = runif(-extent.width * c.spread, extent.width * c.spread, rng);
-    const cy = runif(-extent.height * c.spread, extent.height * c.spread, rng);
-    const angle = runif(0, Math.PI * 2, rng);
-    const len = runif(c.len[0], c.len[1], rng);
-    const width = runif(c.width[0], c.width[1], rng);
-    ranges.push({ x: cx, y: cy, angle, len, width });
-  }
-
-  // ---- Place mountains along ranges ----
-  const outlierFrac = c.outlier;
+  const halfW = extent.width / 2, halfH = extent.height / 2;
+  const xLo = -halfW + xMin * extent.width, xHi = -halfW + xMax * extent.width;
+  const yLo = -halfH + yMin * extent.height, yHi = -halfH + yMax * extent.height;
   const mounts = [];
-  for (let i = 0; i < n; i++) {
-    let mx, my, sizeFactor;
-
-    if (rng() < outlierFrac) {
-      mx = runif(-extent.width * 0.44, extent.width * 0.44, rng);
-      my = runif(-extent.height * 0.44, extent.height * 0.44, rng);
-      sizeFactor = runif(0.2, 0.6, rng);
-    } else {
-      const range = ranges[Math.floor(rng() * ranges.length)];
-      const t = (rng() + rng()) * 0.5;
-      const along = (t - 0.5) * range.len;
-      const perp = (rng() + rng() - 1) * range.width * 0.7;
-
-      const cosA = Math.cos(range.angle);
-      const sinA = Math.sin(range.angle);
-      mx = range.x + along * cosA - perp * sinA;
-      my = range.y + along * sinA + perp * cosA;
-
-      const centerProx = 1 - Math.abs(t - 0.5) * 2;
-      const spineProx = 1 - Math.abs(perp) / (range.width * 0.7 + 1);
-      sizeFactor = 0.3 + (centerProx * 0.5 + spineProx * 0.5) * 0.7;
-    }
-
-    const margin = extent.width * 0.44;
-    mx = Math.max(-margin, Math.min(margin, mx));
-    my = Math.max(-margin, Math.min(margin, my));
-
-    const r = runif(1.2, 2.0 + sizeFactor * 4, rng);
-    const peakHeight = r * runif(0.6, 1.2, rng) * tc.heightScale;
-    mounts.push({ x: mx, y: my, r, peakHeight });
+  for (let i = 0; i < count; i++) {
+    const mx = runif(xLo, xHi, rng), my = runif(yLo, yHi, rng);
+    const diameter = runif(8, 22, rng) * sizeScale;
+    mounts.push({ x: mx, y: my, r: diameter / 2, peakHeight: height });
   }
+  return mounts;
+}
 
-  // ---- Accumulate heights (cone + skirt, unchanged) ----
+function generateRidgeFeature(pts, extent, rng, count, height, xMin, xMax, yMin, yMax, isTrough) {
+  const sizeScale = extent.width / 320;
+  const halfW = extent.width / 2, halfH = extent.height / 2;
+  const xLo = -halfW + xMin * extent.width, xHi = -halfW + xMax * extent.width;
+  const yLo = -halfH + yMin * extent.height, yHi = -halfH + yMax * extent.height;
+  const cx = runif(xLo, xHi, rng), cy = runif(yLo, yHi, rng);
+  const angle = runif(0, Math.PI * 2, rng);
+  const ridgeLen = runif(0.5, 0.85, rng) * extent.width;
+  const cosA = Math.cos(angle), sinA = Math.sin(angle);
+  const ridgeH = height;
+  const ridgeWidth = Math.abs(height) * 4 * sizeScale;
+  const wiggleAmp = ridgeWidth * runif(0.5, 1.0, rng);
+  const wiggleFreq = runif(1.5, 3.5, rng);
+  const wigglePhase = rng() * Math.PI * 2;
+  const peakSpacing = 6;
+  const peakCount = Math.max(3, Math.round(ridgeLen / peakSpacing));
+  const peakMounts = [];
+  for (let i = 0; i < peakCount; i++) {
+    const t = (i + 0.5) / peakCount;
+    const alongOffset = (t - 0.5) * ridgeLen;
+    const wiggle = Math.sin(t * wiggleFreq * Math.PI * 2 + wigglePhase) * wiggleAmp;
+    const perpJitter = runif(-0.3, 0.3, rng) * wiggleAmp;
+    const mx = cx + alongOffset * cosA - (wiggle + perpJitter) * sinA;
+    const my = cy + alongOffset * sinA + (wiggle + perpJitter) * cosA;
+    const alongFactor = 1 - 0.6 * (2 * Math.abs(t - 0.5));
+    const peakR = runif(3, 6, rng) * sizeScale;
+    peakMounts.push({ x: mx, y: my, r: peakR, peakHeight: height * alongFactor });
+  }
+  const spurInterval = 20;
+  const nSpurs = Math.max(1, Math.round(ridgeLen / spurInterval));
+  const spurData = [];
+  for (let i = 0; i < nSpurs; i++) {
+    const t = (i + 1) / (nSpurs + 1);
+    const perpDir = rng() < 0.5 ? -1 : 1;
+    const spurLen = runif(12, 30, rng) * sizeScale;
+    const spurH = height * runif(0.7, 1.0, rng);
+    const spurW = ridgeWidth * runif(0.4, 0.7, rng);
+    const wiggle = Math.sin(t * wiggleFreq * Math.PI * 2 + wigglePhase) * wiggleAmp;
+    const spurCx = cx + (t - 0.5) * ridgeLen * cosA - wiggle * sinA;
+    const spurCy = cy + (t - 0.5) * ridgeLen * sinA + wiggle * cosA;
+    const spurAngle = angle + perpDir * Math.PI / 2;
+    spurData.push({
+      sx: spurCx, sy: spurCy,
+      ex: spurCx + Math.cos(spurAngle) * spurLen,
+      ey: spurCy + Math.sin(spurAngle) * spurLen,
+      cosA: Math.cos(spurAngle), sinA: Math.sin(spurAngle),
+      len: spurLen, height: spurH, width: spurW,
+    });
+    const midT = 0.5;
+    const mdx = Math.cos(spurAngle) * spurLen * midT;
+    const mdy = Math.sin(spurAngle) * spurLen * midT;
+    const spR = runif(2, 5, rng) * sizeScale;
+    const spH = spurH * 0.6;
+    peakMounts.push({ x: spurCx + mdx * 0.6, y: spurCy + mdy * 0.6, r: spR, peakHeight: spH });
+    peakMounts.push({ x: spurCx + mdx, y: spurCy + mdy, r: spR * 0.7, peakHeight: spH * 0.8 });
+  }
+  const ridgeData = { cx, cy, cosA, sinA, len: ridgeLen, height: ridgeH, width: ridgeWidth, wiggleAmp, wiggleFreq, wigglePhase };
+  return { ridgeData, spurData, peakMounts };
+}
+
+function applyQueue(h, pts, queue, state, displayMounts) {
+  const shapePower = queue.shapePower;
+  const noiseAmp = queue.noiseAmp;
+  const scale = state.scale;
+  for (const m of queue.mounts) {
+    for (let i = 0; i < pts.length; i++) {
+      const dx = pts[i][0] - m.x, dy = pts[i][1] - m.y;
+      const d = Math.sqrt(dx * dx + dy * dy);
+      if (d < m.r * 2) {
+        const base = mountainFalloff(d, m.r, shapePower);
+        const noiseVal = perPointNoise(i, m._idx);
+        const jitter = 1 + noiseAmp * (noiseVal * 2 - 1);
+        h[i] += m.peakHeight * scale * base * jitter;
+      }
+    }
+    displayMounts.push({ x: m.x, y: m.y, r: m.r, peakHeight: m.peakHeight * scale });
+  }
+  const rd = queue.ridgeData;
+  if (rd) {
+    for (let i = 0; i < pts.length; i++) {
+      const dx = pts[i][0] - rd.cx, dy = pts[i][1] - rd.cy;
+      const along = (dx * rd.cosA + dy * rd.sinA) / rd.len + 0.5;
+      if (along >= -0.1 && along <= 1.1) {
+        const basePerp = (-dx * rd.sinA + dy * rd.cosA);
+        const wiggle = Math.sin(along * rd.wiggleFreq * Math.PI * 2 + rd.wigglePhase) * rd.wiggleAmp;
+        const perp = basePerp - wiggle;
+        const alongProfile = Math.exp(-6 * (along - 0.5) * (along - 0.5));
+        const crossSection = Math.exp(-perp * perp / (2 * rd.width * rd.width));
+        h[i] += rd.height * scale * alongProfile * crossSection;
+      }
+    }
+  }
+  for (const spur of queue.spurData) {
+    for (let i = 0; i < pts.length; i++) {
+      const sdx = pts[i][0] - spur.sx, sdy = pts[i][1] - spur.sy;
+      const sAlong = (sdx * spur.cosA + sdy * spur.sinA) / spur.len;
+      if (sAlong >= 0 && sAlong <= 1.2) {
+        const sPerp = (-sdx * spur.sinA + sdy * spur.cosA);
+        const sRamp = sAlong < 0.2 ? sAlong / 0.2 : 1.0;
+        const sPlateau = sAlong <= 0.65 ? 1.0 : Math.max(0, 1 - (sAlong - 0.65) / 0.55);
+        const sProfile = sRamp * sPlateau;
+        const sCross = Math.exp(-sPerp * sPerp / (2 * spur.width * spur.width));
+        h[i] += spur.height * scale * sProfile * sCross;
+      }
+    }
+  }
+}
+
+function processTerrainCommands(commands, pts, extent, rng, state) {
   const h = zero(pts.length);
-  for (let i = 0; i < pts.length; i++) {
-    const p = pts[i];
-    let sum = 0;
-    for (let j = 0; j < n; j++) {
-      const m = mounts[j];
-      const d2 = (p[0] - m.x) * (p[0] - m.x) + (p[1] - m.y) * (p[1] - m.y);
-      const peak = Math.max(0, 1 - d2 / (m.r * m.r));
-      const skirt = Math.exp(-d2 / (2 * (m.r * 4) * (m.r * 4))) * 0.2;
-      sum += peak + skirt;
+  const displayMounts = [];
+  const queue = { mounts: [], ridgeData: null, spurData: [], shapePower: 0.5, noiseAmp: 0.15 };
+  let mountGlobalIdx = 0;
+  for (const cmd of commands) {
+    switch (cmd.type) {
+      case 'scale':
+        state.scale = cmd.value;
+        break;
+      case 'rainfall':
+        state.rainfall = cmd.value;
+        break;
+      case 'hill':
+      case 'pit': {
+        const isPit = cmd.type === 'pit';
+        const mounts = generateHillFeatures(extent, rng, cmd.count, isPit ? -cmd.depth : cmd.height, cmd.xMin, cmd.xMax, cmd.yMin, cmd.yMax, isPit);
+        for (const m of mounts) {
+          m._idx = mountGlobalIdx++;
+          queue.mounts.push(m);
+        }
+        break;
+      }
+      case 'range':
+      case 'trough': {
+        const isTrough = cmd.type === 'trough';
+        const feature = generateRidgeFeature(pts, extent, rng, cmd.count, isTrough ? -cmd.depth : cmd.height, cmd.xMin, cmd.xMax, cmd.yMin, cmd.yMax, isTrough);
+        queue.ridgeData = feature.ridgeData;
+        queue.spurData = feature.spurData;
+        for (const m of feature.peakMounts) {
+          m._idx = mountGlobalIdx++;
+          queue.mounts.push(m);
+        }
+        break;
+      }
+      case 'apply':
+        queue.shapePower = cmd.shapePower;
+        queue.noiseAmp = cmd.noiseAmp;
+        applyQueue(h, pts, queue, state, displayMounts);
+        queue.mounts = [];
+        queue.ridgeData = null;
+        queue.spurData = [];
+        break;
     }
-    h[i] = sum;
   }
-  return { heights: h, mounts };
+  if (queue.mounts.length > 0 || queue.ridgeData) {
+    applyQueue(h, pts, queue, state, displayMounts);
+  }
+  const areaRatio = (extent.width / 320) ** 2;
+  const visibleCount = Math.max(5, Math.round(25 * areaRatio));
+  const sorted = [...displayMounts].sort((a, b) => b.peakHeight - a.peakHeight);
+  const filteredMounts = sorted.slice(0, Math.min(visibleCount, sorted.length));
+  return { heights: h, mounts: filteredMounts };
 }
 
 function extentForPoints(pts) {
@@ -1024,11 +1236,28 @@ export function buildRegion(template, cols, rows, seed, terrain, baseTemp = 22, 
   const del = new Delaunator(flat);
   const adj = buildAdjacency(del, npts);
 
-  const tc = TERRAIN_CONFIGS[terrain] || TERRAIN_CONFIGS.highland;
-  let nm = tc.count[0] + Math.floor(rng() * (tc.count[1] - tc.count[0] + 1));
-  nm = Math.max(20, Math.floor(nm * areaRatio));
-  const mountainResult = mountains(pts, extent, nm, rng, terrain, template);
-  let h = mountainResult.heights;
+  // Build command list from terrain + template
+  const terrainPrepend = (TERRAIN_STATE_CMDS[terrain] || TERRAIN_STATE_CMDS.highland);
+  const templateScript = (TEMPLATE_SCRIPTS[template] || TEMPLATE_SCRIPTS.island);
+  const rawCommands = [...terrainPrepend, ...templateScript];
+  const commands = rawCommands.map(parseCommand).filter(Boolean);
+
+  // State passed to processTerrainCommands (scale/rainfall set by commands)
+  const state = { scale: 1.0, rainfall: 1.0 };
+  const terrainResult = processTerrainCommands(commands, pts, extent, rng, state);
+  let h = terrainResult.heights;
+
+  // Scan pipeline control commands
+  let maskType = null, seaLevelQuantile = null;
+  let hasFjord = false, hasLake = false, hasBay = false, hasLandClamp = false;
+  for (const cmd of commands) {
+    if (cmd.type === 'mask') maskType = cmd.maskType;
+    else if (cmd.type === 'sealevel') seaLevelQuantile = cmd.quantile;
+    else if (cmd.type === 'fjord') hasFjord = true;
+    else if (cmd.type === 'lake') hasLake = true;
+    else if (cmd.type === 'bay') hasBay = true;
+    else if (cmd.type === 'landclamp') hasLandClamp = true;
+  }
 
   // Subtract baseline so valleys start at 0
   let hMin = Infinity;
@@ -1036,42 +1265,37 @@ export function buildRegion(template, cols, rows, seed, terrain, baseTemp = 22, 
   for (let i = 0; i < pts.length; i++) h[i] -= hMin;
 
   // Island mask: mountains keep their shape, just fade at edges.
-  // Angular perturbation breaks the circular outline into jagged bays and headlands.
-  const maskConfigs = {
-    island: { radius: 0.48, offX: 0, offY: 0, amp: [0.22, 0.14, 0.08, 0.04] },
-    archipelago: { radius: 0.32, offX: 0, offY: 0, amp: [0.30, 0.18, 0.10, 0.05] },
-    bay: { radius: 5.00, offX: 0, offY: 0, amp: [0, 0, 0, 0] },
-    fjord: { radius: 5.00, offX: 0, offY: 0, amp: [0, 0, 0, 0] },
-
-    lake: { radius: 5.00, offX: 0, offY: 0, amp: [0, 0, 0, 0] },
-    land: { radius: 5.00, offX: 0, offY: 0, amp: [0, 0, 0, 0] },
-  };
-  const mc = maskConfigs[template] || maskConfigs.island;
-  const baseR = extent.width * mc.radius;
-  for (let i = 0; i < pts.length; i++) {
-    const x = pts[i][0] - mc.offX * extent.width;
-    const y = pts[i][1] - mc.offY * extent.height;
-    const d = Math.sqrt(x * x + y * y);
-    const angle = Math.atan2(y, x);
-    const a = mc.amp;
-    const perturb = a[0] * Math.sin(angle * 2 + 0.5)
-      + a[1] * Math.sin(angle * 5 + 1.3)
-      + a[2] * Math.sin(angle * 11 + 2.7)
-      + a[3] * Math.sin(angle * 23 + 4.1);
-    const effectiveR = baseR * (1 + perturb);
-    const t = d / effectiveR;
-    const mask = 1 - t * t * (3 - 2 * t);
-    h[i] *= Math.max(0, mask);
+  let cellMask = null;
+  if (maskType === 'island' || maskType === 'archipelago') {
+    const mc = MASK_CONFIGS[maskType];
+    const baseR = extent.width * mc.radius;
+    cellMask = new Float64Array(pts.length);
+    for (let i = 0; i < pts.length; i++) {
+      const x = pts[i][0] - mc.offX * extent.width;
+      const y = pts[i][1] - mc.offY * extent.height;
+      const d = Math.sqrt(x * x + y * y);
+      const angle = Math.atan2(y, x);
+      const a = mc.amp;
+      const perturb = a[0] * Math.sin(angle * 2 + 0.5)
+        + a[1] * Math.sin(angle * 5 + 1.3)
+        + a[2] * Math.sin(angle * 11 + 2.7)
+        + a[3] * Math.sin(angle * 23 + 4.1);
+      const effectiveR = baseR * (1 + perturb);
+      const t = d / effectiveR;
+      const mask = 1 - t * t * (3 - 2 * t);
+      cellMask[i] = Math.max(0, mask);
+      h[i] *= cellMask[i];
+    }
   }
 
-  // No relaxation � sharp peaks
+  // No relaxation — sharp peaks
   h = normalize(h);
   h = peaky(h);
   h = doErosion(h, runif(0.02, 0.12, rng), 8, adj, pts, extent);
 
   // Island/archipelago: force map-edge cells to 0 so edges are always water
-  if (template === 'island' || template === 'archipelago') {
-    const margin = extent.width * 0.01;
+  if (maskType === 'island' || maskType === 'archipelago') {
+    const margin = extent.width * 0.03;
     const half = extent.width / 2;
     for (let i = 0; i < pts.length; i++) {
       if (Math.abs(pts[i][0]) > half - margin || Math.abs(pts[i][1]) > half - margin) {
@@ -1081,9 +1305,9 @@ export function buildRegion(template, cols, rows, seed, terrain, baseTemp = 22, 
   }
 
   // Fjord carved before sea-level so the trench is reliably below water cutoff
-  if (template === 'fjord') {
+  if (hasFjord) {
     const edge = Math.floor(rng() * 4);
-    const edgeOff = runif(-50, 50, rng), angVar = runif(-0.3, 0.3, rng);
+    const edgeOff = runif(-50, 50, rng) * (extentSize / 320), angVar = runif(-0.3, 0.3, rng);
     let sx, sy, angle;
     const halfEdge = extent.width / 2;
     if (edge === 0) { sx = edgeOff; sy = halfEdge; angle = -Math.PI / 2 + angVar; }
@@ -1103,41 +1327,53 @@ export function buildRegion(template, cols, rows, seed, terrain, baseTemp = 22, 
     }
   }
 
-  const waterQuantile = { island: 0.40, archipelago: 0.55, fjord: 0.01, lake: 0.005, bay: 0.005, land: 0.00 };
-  const wq = waterQuantile[template] || 0.35;
+  // Sea level
+  const wq = (seaLevelQuantile != null) ? seaLevelQuantile : 0.35;
   h = setSeaLevel(h, wq);
   h = fillSinks(h, adj, pts, extent);
   h = cleanCoast(h, adj, pts, 3);
 
+  // Force cells outside the mask to water unconditionally
+  // (fillSinks/cleanCoast may otherwise resurrect them)
+  if (cellMask && (maskType === 'island' || maskType === 'archipelago')) {
+    for (let i = 0; i < pts.length; i++) {
+      if (cellMask[i] < 0.01) h[i] = -0.1;
+    }
+  }
+
   // Land: ensure no cells at exactly 0 (mesher treats h <= 0 as water)
-  if (template === 'land') {
+  if (hasLandClamp) {
     for (let i = 0; i < h.length; i++) if (h[i] <= 0) h[i] = 1e-8;
   }
 
   // ---- Template-specific terrain features (inverted depressions) ----
-  if (template === 'lake') {
-    const cx = runif(-15, 15, rng), cy = runif(-15, 15, rng);
+  if (hasLake) {
+    const cx = runif(-extent.width * 0.047, extent.width * 0.047, rng), cy = runif(-extent.width * 0.047, extent.width * 0.047, rng);
     const r = runif(25, 50, rng) * (extentSize / 320);
-    const depth = runif(0.25, 0.5, rng);
-    for (let i = 0; i < pts.length; i++) {
-      const d2 = (pts[i][0] - cx) ** 2 + (pts[i][1] - cy) ** 2;
-      h[i] -= Math.exp(-d2 / (2 * r * r)) * depth;
-    }
-  } else if (template === 'bay') {
-    const edge = Math.floor(rng() * 4);
-    let cx, cy;
-    const bayEdge = extent.width * 0.375;
-    if (edge === 0) { cx = runif(-30, 30, rng); cy = bayEdge; }
-    else if (edge === 1) { cx = bayEdge; cy = runif(-30, 30, rng); }
-    else if (edge === 2) { cx = runif(-30, 30, rng); cy = -bayEdge; }
-    else { cx = -bayEdge; cy = runif(-30, 30, rng); }
-    const r = runif(35, 65, rng) * (extentSize / 320);
-    const depth = runif(0.2, 0.4, rng);
+    const depth = runif(0.4, 0.7, rng);
     for (let i = 0; i < pts.length; i++) {
       const d2 = (pts[i][0] - cx) ** 2 + (pts[i][1] - cy) ** 2;
       h[i] -= Math.exp(-d2 / (2 * r * r)) * depth;
     }
   }
+  if (hasBay) {
+    const edge = Math.floor(rng() * 4);
+    let cx, cy;
+    const bayEdge = extent.width * 0.375;
+    const bayOff = runif(-30, 30, rng) * (extentSize / 320);
+    if (edge === 0) { cx = bayOff; cy = bayEdge; }
+    else if (edge === 1) { cx = bayEdge; cy = bayOff; }
+    else if (edge === 2) { cx = bayOff; cy = -bayEdge; }
+    else { cx = -bayEdge; cy = bayOff; }
+    const r = runif(35, 65, rng) * (extentSize / 320);
+    const depth = runif(0.35, 0.6, rng);
+    for (let i = 0; i < pts.length; i++) {
+      const d2 = (pts[i][0] - cx) ** 2 + (pts[i][1] - cy) ** 2;
+      h[i] -= Math.exp(-d2 / (2 * r * r)) * depth;
+    }
+  }
+
+
 
   const waterLevel = 0;
   const heightMin = Math.min(...h);
@@ -1152,8 +1388,8 @@ export function buildRegion(template, cols, rows, seed, terrain, baseTemp = 22, 
 
   const rivers = computeRivers(h, adj);
   const moisture = computeMoisture(pts, h, waterLevel, adj, rivers.flux);
-  if (tc.rainfall != null) {
-    for (let i = 0; i < moisture.length; i++) moisture[i] *= tc.rainfall;
+  if (state.rainfall != null) {
+    for (let i = 0; i < moisture.length; i++) moisture[i] *= state.rainfall;
   }
 
   const maxLandH = Math.max(heightMax - waterLevel, 0.001);
@@ -1387,8 +1623,8 @@ export function buildRegion(template, cols, rows, seed, terrain, baseTemp = 22, 
     waterLevel,
     template,
     seed,
-    mountainCount: nm,
-    mounts: mountainResult.mounts,
+    mountainCount: terrainResult.mounts.length,
+    mounts: terrainResult.mounts,
     temperature,
     tempBand,
     moisture,

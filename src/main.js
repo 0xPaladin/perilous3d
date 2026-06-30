@@ -98,6 +98,7 @@ function logRegionStats(region) {
   }
   console.log('=== Region Stats ===');
   console.log('Biomes:', biomeCounts.map((c, i) => `${BIOME_NAMES[i]}: ${c}`).join(' | '));
+  console.log('Mountains:', (region.mounts || []).map((m, i) => ({ idx: i, x: m.x, y: m.y, h: m.peakHeight })));
   console.log('Cities:', region.cities || []);
   console.log('Towns:', region.towns || []);
   console.log('Resources:', region.resources || []);
