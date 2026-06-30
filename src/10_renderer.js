@@ -9,8 +9,11 @@ export function createScene(canvas, region) {
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x36dbd6); // sky top (matching PS subtle gradient would need shader)
 
-  const camera = new THREE.PerspectiveCamera(60, canvas.clientWidth / canvas.clientHeight, 0.1, 2000);
-  camera.position.set(0, 120, 260);
+  const extentSize = region.extent?.width || 320;
+  const s = extentSize / 320;
+
+  const camera = new THREE.PerspectiveCamera(60, canvas.clientWidth / canvas.clientHeight, 0.1, 2000 * s);
+  camera.position.set(0, 120 * s, 260 * s);
 
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
   renderer.setPixelRatio(window.devicePixelRatio);
@@ -25,24 +28,24 @@ export function createScene(canvas, region) {
   controls.dampingFactor = 0.08;
   controls.maxPolarAngle = Math.PI / 2.05;
   controls.minDistance = 10;
-  controls.maxDistance = 800;
+  controls.maxDistance = 800 * s;
 
   // ---- Lights ----
   const ambient = new THREE.HemisphereLight(0x87ceeb, 0x556b2f, 0.7);
   scene.add(ambient);
 
   const sun = new THREE.DirectionalLight(0xfff5e6, 1.8);
-  sun.position.set(200, 300, 150);
+  sun.position.set(200 * s, 300 * s, 150 * s);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
-  sun.shadow.camera.left = -200;
-  sun.shadow.camera.right = 200;
-  sun.shadow.camera.top = 200;
-  sun.shadow.camera.bottom = -200;
+  sun.shadow.camera.left = -200 * s;
+  sun.shadow.camera.right = 200 * s;
+  sun.shadow.camera.top = 200 * s;
+  sun.shadow.camera.bottom = -200 * s;
   scene.add(sun);
 
   // ---- Terrain mesh ----
-  const state = { scene, camera, renderer, controls };
+  const state = { scene, camera, renderer, controls, extentScale: s };
 
   import('./07_mesher.js').then(({ buildTerrainMesh, buildRiverMesh, buildTrees, buildSettlements, buildResources, buildTrouble, buildSiteFeatures }) => {
     const terrainMesh = buildTerrainMesh(region);
@@ -99,11 +102,11 @@ scene.add(forestGroup);
       cloud.add(blob);
     }
     cloud.position.set(
-      (Math.random() - 0.5) * 500,
+      (Math.random() - 0.5) * 500 * s,
       80 + Math.random() * 40,
-      (Math.random() - 0.5) * 500
+      (Math.random() - 0.5) * 500 * s
     );
-    cloud.scale.setScalar(10 + Math.random() * 20);
+    cloud.scale.setScalar((10 + Math.random() * 20) * s);
     cloudGroup.add(cloud);
   }
   scene.add(cloudGroup);
@@ -119,7 +122,7 @@ scene.add(forestGroup);
   return state;
 }
 
-export function animate({ scene, camera, renderer, controls }) {
+export function animate({ scene, camera, renderer, controls, extentScale }) {
   const clock = new THREE.Clock();
   let frameCount = 0;
   let lastFpsUpdate = performance.now();
@@ -134,7 +137,8 @@ export function animate({ scene, camera, renderer, controls }) {
       if (obj.name === 'clouds') {
         obj.children.forEach(c => {
           c.position.x += dt * 2;
-          if (c.position.x > 350) c.position.x = -350;
+          const scale = extentScale || 1;
+          if (c.position.x > 350 * scale) c.position.x = -350 * scale;
         });
       }
     });

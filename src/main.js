@@ -32,7 +32,7 @@ function tempToClimate(temp) {
   return 'Tropical';
 }
 
-function generate(template, seedStr, terrain, climate, safety) {
+function generate(template, seedStr, terrain, climate, safety, size) {
   app.seedStr = seedStr;
   const seed = seedFromString(seedStr);
   const seedNum = seed.toString(36).toUpperCase();
@@ -52,7 +52,7 @@ function generate(template, seedStr, terrain, climate, safety) {
 
   let region;
   try {
-    region = buildRegion(template, 55, 55, seed, terrain, baseTemp, cityCount);
+    region = buildRegion(template, 55, 55, seed, terrain, baseTemp, cityCount, size);
   } catch (e) {
     console.error('terrain generation failed:', e);
     progressPanel.hide();
@@ -78,6 +78,7 @@ function generate(template, seedStr, terrain, climate, safety) {
   url.searchParams.set('temp', baseTemp);
   url.searchParams.set('climate', climate);
   url.searchParams.set('safety', safety);
+  url.searchParams.set('size', size);
   history.replaceState({}, '', url);
 }
 
@@ -135,6 +136,7 @@ if (!initialClimate) {
   initialClimate = tempToClimate(t);
 }
 const initialSafety = urlParams.get('safety') ? parseInt(urlParams.get('safety'), 10) : 0;
+const initialSize = urlParams.get('size') ? parseInt(urlParams.get('size'), 10) : 320;
 const initialSeed = urlParams.get('seed') || (Math.random().toString(36).substring(2, 10) + Date.now().toString(36));
 
 // Init GUI
@@ -145,6 +147,7 @@ initGUI({
   initialTerrain,
   initialClimate,
   initialSafety,
+  initialSize,
 });
 
-generate(initialTemplate, initialSeed, initialTerrain, initialClimate, initialSafety);
+generate(initialTemplate, initialSeed, initialTerrain, initialClimate, initialSafety, initialSize);

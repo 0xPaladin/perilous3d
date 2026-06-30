@@ -12,7 +12,7 @@ Code inspiration:
 * [Azgaar's Fantasy Map Generator](https://github.com/Azgaar/Fantasy-Map-Generator)
 * https://github.com/mewo2/terrain by Martin O'Leary
 
-Perilous 3D generates a  **320×320 km** map with biome shading on a flat base mesh and low-poly terrain features. It uses **Three.js** for rendering and interaction.  
+Perilous 3D generates a  **50–400 km configurable** map (default 320×320 km) with biome shading on a flat base mesh and low-poly terrain features. It uses **Three.js** for rendering and interaction.  
 
 ## Tech Stack
 
@@ -64,7 +64,7 @@ index.html
 ## Terrain Generation Pipeline
 
 ```
-Seed → ChanceJS PRNG → 12000–20000 random points (320×320 km extent)
+Seed → ChanceJS PRNG → points scaled by map area (~3000 at 50 km, ~15000 at 320 km)
      → Delaunator triangulation → adjacency graph
      → Terrain preset (wetland/lowland/woodland/highland/wasteland)
          → determines mountain count (#/height/distribution) + overall rainfall
@@ -136,7 +136,7 @@ python -m http.server 8000
 ### URL Parameters
 
 ```
-?template=island&seed=ABCD1234&terrain=highland&climate=Temperate&safety=1
+?template=island&seed=ABCD1234&terrain=highland&climate=Temperate&safety=1&size=320
 ```
 
 | Param       | Values                                                  | Description                                              |
@@ -146,13 +146,14 @@ python -m http.server 8000
 | `terrain`   | `wetland`, `lowland`, `woodland`, `highland`, `wasteland` | Terrain preset (counts, heights, rainfall)           |
 | `climate`   | `Arctic`, `Sub-arctic`, `Temperate`, `Sub-tropical`, `Tropical` | Climate preset (base temperature)           |
 | `safety`    | 0–3                                                     | Cities: Perilous(0) / Dangerous(1) / Unsafe(2) / Safe(3) |
+| `size`      | 50–400                                                   | Map extent in km (default 320). Scales points, mountains, cities, features by area |
 
 ## Controls
 
 - **OrbitControls**: left-click rotate, right-click pan, scroll to zoom
 - **lil-gui** (top-right panel):
   - **Template** → map template dropdown
-  - **Parameters** → Terrain (wetland/lowland/woodland/highland/wasteland), Climate (Arctic/Sub-arctic/Temperate/Sub-tropical/Tropical), Safety (Perilous/Dangerous/Unsafe/Safe)
+  - **Parameters** → Terrain (wetland/lowland/woodland/highland/wasteland), Climate (Arctic/Sub-arctic/Temperate/Sub-tropical/Tropical), Safety (Perilous/Dangerous/Unsafe/Safe), Map Size (50–400 km)
   - **Actions** → `New Island`, `Update`
   - **Info** → current seed (read-only)
 - **Locations panel** (left panel, below GUI): category select (Cities, Towns, Resources, Dungeons, Ruins, Landmarks, Outposts, Hazards, Obstacles, Areas, Trouble) → clickable item list → smooth fly-to camera; Zoom Out button returns to default view. Dungeons, Ruins, and Landmarks display generated names where available. Hazards, obstacles, areas display type; trouble displays danger type; factions display faction type.
@@ -204,10 +205,10 @@ Rendered as **gold octahedrons** (radius 1.2) floating Y = terrain + 2.0 in `bui
 ### Trouble
 `findTrouble()` places danger markers in two tiers (all cells ≥15 km from any city or town):
 - **Resource trouble**: exactly **1 per resource** — the worst-habitability land cell within **~20 km** of each deposit
-- **Safety-scaled extras**: `(3 − safety) × 2` additional markers
-  - **Perilous (0)**: 6 extras
-  - **Dangerous (1)**: 4 extras
-  - **Unsafe (2)**: 2 extras
+- **Safety-scaled extras**: `(3 − safety) × 2 × areaRatio` additional markers (scaled by map area; values shown for default 320 km)
+  - **Perilous (0)**: 6 extras (default)
+  - **Dangerous (1)**: 4 extras (default)
+  - **Unsafe (2)**: 2 extras (default)
   - **Safe (3)**: 0 extras
   - Half land within **~30 km** of a city/town (worst habitability)
   - Half land directly on random ruin sites
@@ -242,11 +243,11 @@ Outpost, landmark, hazard, obstacle, and area data is stored in `region.outpostS
 
 **PRNG** — Mulberry32 seeded RNG for deterministic generation (embedded in `05_terrain.js`).
 
-**Delaunay Triangulation** — [Delaunator](https://github.com/mapbox/delaunator) provides mesh topology from 12K–20K random points across a 320×320 km extent.
+**Delaunay Triangulation** — [Delaunator](https://github.com/mapbox/delaunator) provides mesh topology from random points (scales with map area: ~3K minimum, ~15–20K at 320 km, ~23–31K at 400 km).
 
 **Cartoon Mountains** — Each mountain is a **parabolic cone** (`max(0, 1 − d²/r²)`) giving a sharp peak with no fuzzy tails, plus a wide **Gaussian skirt** at 20% amplitude to raise the surrounding ground. This produces distinct, steep peaks with continuous rolling terrain between them. Radii vary 1.2–5 km per cone. Peaks are **clustered along 2–6 range backbones** (lines defined by center, angle, length, and width). Per-template configurations control range count, length, width, and spatial spread. 15% of peaks are random outliers (foothills and isolated cones).
 
-**Island Mask** — A smoothstep multiplier (`1 − t²(3−2t)`) based on distance from center, with **angular perturbation** (4-frequency sine waves) to create jagged coastlines with bays, headlands, and fjord channels. Per-template configs control base radius, center offset, and perturbation amplitudes. Templates marked "full map" use radius ≥ 1.0× extent so the terrain fills the entire 320×320 km area.
+**Island Mask** — A smoothstep multiplier (`1 − t²(3−2t)`) based on distance from center, with **angular perturbation** (4-frequency sine waves) to create jagged coastlines with bays, headlands, and fjord channels. Per-template configs control base radius, center offset, and perturbation amplitudes. Templates marked "full map" use radius ≥ 1.0× extent so the terrain fills the entire configurable map area.
 
 **Hydraulic Erosion** — For each vertex: compute downhill direction → collect upstream flux → compute slope → `erosion = √flux × slope + slope²` (capped at 200). 8 iterations with sink-filling between passes to prevent depressions.
 
@@ -262,7 +263,7 @@ Outpost, landmark, hazard, obstacle, and area data is stored in `region.outpostS
 
 **Moisture** — Azgaar-style two-phase computation (`computeMoisture()` in `05_terrain.js`). Phase A: BFS from rivers (10), ocean (8), and coast-adjacent land (7) with exponential decay (0.94× per hop inland). Phase B: neighbor averaging with river flux bonus (`4 + mean(raw + max(flux/10, 2), neighbors)`). Output range ~4–50, stored in `region.moisture`.
 
-**Temperature** — `computeTemperature()` in `05_terrain.js`. Base temp parameter (±0.5°C latitudinal gradient across 320 km, south hot / north cold) with elevation lapse rate (−10°C max). Mapped to Azgaar's 26-band scale: `tempBand = round(clamp(20 − t, 0, 25))`. Stored in `region.temperature` and `region.tempBand`.
+**Temperature** — `computeTemperature()` in `05_terrain.js`. Base temp parameter (±0.5°C latitudinal gradient across map extent, south hot / north cold) with elevation lapse rate (−10°C max). Mapped to Azgaar's 26-band scale: `tempBand = round(clamp(20 − t, 0, 25))`. Stored in `region.temperature` and `region.tempBand`.
 
 **Biomes** — `biomeId()` in `05_terrain.js` uses Azgaar's exact 5×26 biome matrix (5 moisture bands × 26 temperature bands). Overrides: normH < 0 → Marine (0), normH > 0.80 → Glacier (11). Produces 13 biomes: Marine, Hot desert, Cold desert, Savanna, Grassland, Tropical seasonal forest, Temperate deciduous forest, Tropical rainforest, Temperate rainforest, Taiga, Tundra, Glacier, Wetland. Colors looked up via `BIOME_COLORS[13]` array in `07_mesher.js`.
 
@@ -270,9 +271,9 @@ Outpost, landmark, hazard, obstacle, and area data is stored in `region.outpostS
 
 **Great Ruins** — `findRuins()` in `05_terrain.js` picks 1–2 high-habitability land cells near existing settlements (within 60 km), avoiding occupied city/town cells (30 km exclusion) and enforcing ≥30 km separation between ruins themselves. Rendered as clusters of broken stone pillars in `buildSettlements()`.
 
-**Minor Ruins** — `findMinorRuins()` scatters 4 + 1d6 (5–10) tall gray obelisks at random land cells, spaced ≥20 km apart. Rendered as `CylinderGeometry(0.3, 0.4, 3.5)` standing at terrain Y + 1.75.
+**Minor Ruins** — `findMinorRuins()` scatters 4 + 1d6 (5–10) tall gray obelisks at random land cells, spaced ≥20 km apart, count scaled by map area. Rendered as `CylinderGeometry(0.3, 0.4, 3.5)` standing at terrain Y + 1.75.
 
-**Trouble** — `findTrouble()` in `05_terrain.js` places danger markers: exactly 1 per resource (worst habitability within ~20 km), plus safety-scaled extras — Perilous=6, Dangerous=4, Unsafe=2, Safe=0. Half the extras land within ~30 km of a city/town (worst habitability), the other half on random ruin sites. All trouble cells are ≥15 km from any city or town (added to the inner `addTrouble()` function). Lair/dwelling features from the resolution loop also push a `'lair'` trouble marker using the same distance constraints. Rendered as inverted red pyramids (`ConeGeometry` rotated π) in `buildTrouble()`.
+**Trouble** — `findTrouble()` in `05_terrain.js` places danger markers: exactly 1 per resource (worst habitability within ~20 km), plus safety-scaled extras (scaled by map area) — Perilous=6, Dangerous=4, Unsafe=2, Safe=0 at default 320 km. Half the extras land within ~30 km of a city/town (worst habitability), the other half on random ruin sites. All trouble cells are ≥15 km from any city or town (added to the inner `addTrouble()` function). Lair/dwelling features from the resolution loop also push a `'lair'` trouble marker using the same distance constraints. Rendered as inverted red pyramids (`ConeGeometry` rotated π) in `buildTrouble()`.
 
 ## License
 

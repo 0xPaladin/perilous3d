@@ -105,6 +105,10 @@ function mountains(pts, extent, n, rng, terrain, template) {
     spread: tc.spread,
   };
 
+  const sizeScale = extent.width / 320;
+  c.len = [c.len[0] * sizeScale, c.len[1] * sizeScale];
+  c.width = [c.width[0] * sizeScale, c.width[1] * sizeScale];
+
   const numRanges = c.ranges[0] + Math.floor(rng() * (c.ranges[1] - c.ranges[0] + 1));
   const ranges = [];
   for (let r = 0; r < numRanges; r++) {
@@ -386,7 +390,7 @@ function doErosion(h, amount, n, adj, pts, extent) {
   return result;
 }
 
-function computeTemperature(pts, heights, waterLevel, baseTemp) {
+function computeTemperature(pts, heights, waterLevel, baseTemp, extent) {
   const n = pts.length;
   const temperature = new Float64Array(n);
   let maxLandH = -Infinity;
@@ -395,7 +399,7 @@ function computeTemperature(pts, heights, waterLevel, baseTemp) {
   }
   if (maxLandH === -Infinity) maxLandH = 1;
   for (let i = 0; i < n; i++) {
-    const latFactor = pts[i][1] / 160;
+    const latFactor = pts[i][1] / (extent.height / 2);
     let t = baseTemp + latFactor * 0.5;
     if (heights[i] > waterLevel) {
       t -= ((heights[i] - waterLevel) / maxLandH) * 10;
@@ -757,7 +761,7 @@ const TROUBLE_TYPES = [
   'Monster Nest',
 ];
 
-function findTrouble(pts, heights, waterLevel, habitability, cities, towns, resources, ruins, safety, rngSeed) {
+function findTrouble(pts, heights, waterLevel, habitability, cities, towns, resources, ruins, safety, areaRatio, rngSeed) {
   const rng = createRng(rngSeed ^ 0xEED);
   const trouble = [];
   const minDistSq = 36 * 36;
@@ -789,7 +793,7 @@ function findTrouble(pts, heights, waterLevel, habitability, cities, towns, reso
     }
   }
 
-  const additional = Math.max(0, (3 - safety) * 2);
+  const additional = Math.max(0, Math.round((3 - safety) * 2 * areaRatio));
   const halfNear = Math.floor(additional / 2);
 
   for (let k = 0; k < halfNear; k++) {
@@ -1007,10 +1011,11 @@ function computeRivers(h, adj) {
   return { segments, flux, dh };
 }
 
-export function buildRegion(template, cols, rows, seed, terrain, baseTemp = 22, cityCount = 0) {
+export function buildRegion(template, cols, rows, seed, terrain, baseTemp = 22, cityCount = 0, extentSize = 320) {
   const rng = createRng(seed);
-  const extent = { width: 320, height: 320 };
-  const npts = 12000 + Math.floor(rng() * 8000);
+  const extent = { width: extentSize, height: extentSize };
+  const areaRatio = (extentSize / 320) ** 2;
+  const npts = Math.max(3000, Math.floor((15000 + rng() * 5000) * areaRatio));
 
   const pts = generatePoints(npts, extent, rng);
 
@@ -1020,7 +1025,8 @@ export function buildRegion(template, cols, rows, seed, terrain, baseTemp = 22, 
   const adj = buildAdjacency(del, npts);
 
   const tc = TERRAIN_CONFIGS[terrain] || TERRAIN_CONFIGS.highland;
-  const nm = tc.count[0] + Math.floor(rng() * (tc.count[1] - tc.count[0] + 1));
+  let nm = tc.count[0] + Math.floor(rng() * (tc.count[1] - tc.count[0] + 1));
+  nm = Math.max(20, Math.floor(nm * areaRatio));
   const mountainResult = mountains(pts, extent, nm, rng, terrain, template);
   let h = mountainResult.heights;
 
@@ -1079,12 +1085,13 @@ export function buildRegion(template, cols, rows, seed, terrain, baseTemp = 22, 
     const edge = Math.floor(rng() * 4);
     const edgeOff = runif(-50, 50, rng), angVar = runif(-0.3, 0.3, rng);
     let sx, sy, angle;
-    if (edge === 0) { sx = edgeOff; sy = 160; angle = -Math.PI / 2 + angVar; }
-    else if (edge === 1) { sx = 160; sy = edgeOff; angle = Math.PI + angVar; }
-    else if (edge === 2) { sx = edgeOff; sy = -160; angle = Math.PI / 2 + angVar; }
-    else { sx = -160; sy = edgeOff; angle = angVar; }
-    const len = runif(120, 300, rng);
-    const width = runif(6, 16, rng);
+    const halfEdge = extent.width / 2;
+    if (edge === 0) { sx = edgeOff; sy = halfEdge; angle = -Math.PI / 2 + angVar; }
+    else if (edge === 1) { sx = halfEdge; sy = edgeOff; angle = Math.PI + angVar; }
+    else if (edge === 2) { sx = edgeOff; sy = -halfEdge; angle = Math.PI / 2 + angVar; }
+    else { sx = -halfEdge; sy = edgeOff; angle = angVar; }
+    const len = runif(120, 300, rng) * (extentSize / 320);
+    const width = runif(6, 16, rng) * (extentSize / 320);
     const depth = runif(0.3, 0.6, rng);
     for (let i = 0; i < pts.length; i++) {
       const dx = pts[i][0] - sx, dy = pts[i][1] - sy;
@@ -1110,7 +1117,7 @@ export function buildRegion(template, cols, rows, seed, terrain, baseTemp = 22, 
   // ---- Template-specific terrain features (inverted depressions) ----
   if (template === 'lake') {
     const cx = runif(-15, 15, rng), cy = runif(-15, 15, rng);
-    const r = runif(25, 50, rng);
+    const r = runif(25, 50, rng) * (extentSize / 320);
     const depth = runif(0.25, 0.5, rng);
     for (let i = 0; i < pts.length; i++) {
       const d2 = (pts[i][0] - cx) ** 2 + (pts[i][1] - cy) ** 2;
@@ -1119,11 +1126,12 @@ export function buildRegion(template, cols, rows, seed, terrain, baseTemp = 22, 
   } else if (template === 'bay') {
     const edge = Math.floor(rng() * 4);
     let cx, cy;
-    if (edge === 0) { cx = runif(-30, 30, rng); cy = 120; }
-    else if (edge === 1) { cx = 120; cy = runif(-30, 30, rng); }
-    else if (edge === 2) { cx = runif(-30, 30, rng); cy = -120; }
-    else { cx = -120; cy = runif(-30, 30, rng); }
-    const r = runif(35, 65, rng);
+    const bayEdge = extent.width * 0.375;
+    if (edge === 0) { cx = runif(-30, 30, rng); cy = bayEdge; }
+    else if (edge === 1) { cx = bayEdge; cy = runif(-30, 30, rng); }
+    else if (edge === 2) { cx = runif(-30, 30, rng); cy = -bayEdge; }
+    else { cx = -bayEdge; cy = runif(-30, 30, rng); }
+    const r = runif(35, 65, rng) * (extentSize / 320);
     const depth = runif(0.2, 0.4, rng);
     for (let i = 0; i < pts.length; i++) {
       const d2 = (pts[i][0] - cx) ** 2 + (pts[i][1] - cy) ** 2;
@@ -1136,7 +1144,7 @@ export function buildRegion(template, cols, rows, seed, terrain, baseTemp = 22, 
   const heightMax = Math.max(...h);
   const heightRange = heightMax - heightMin || 1;
 
-  const temperature = computeTemperature(pts, h, waterLevel, baseTemp);
+  const temperature = computeTemperature(pts, h, waterLevel, baseTemp, extent);
   const tempBand = new Uint8Array(npts);
   for (let i = 0; i < npts; i++) {
     tempBand[i] = Math.min(Math.max(20 - temperature[i], 0), 25) | 0;
@@ -1155,15 +1163,17 @@ export function buildRegion(template, cols, rows, seed, terrain, baseTemp = 22, 
     biome[i] = biomeFromMatrix(normH, tempBand[i], moisture[i]);
   }
 
+  const adjustedCityCount = cityCount === 0 ? 0 : Math.max(1, Math.round(cityCount * areaRatio));
   const { habitability, nearWater } = computeHabitability(pts, h, waterLevel, biome, adj, rivers.flux, maxLandH);
-  const resources = generateResources(pts, h, waterLevel, biome, maxLandH, cityCount, seed ^ 0xBABE);
+  const resources = generateResources(pts, h, waterLevel, biome, maxLandH, adjustedCityCount, seed ^ 0xBABE);
   const nearResource = computeNearResource(pts, resources, 15);
-  const cities = findCities(pts, h, waterLevel, habitability, nearWater, nearResource, cityCount, seed ^ 0xCAFE);
-  const towns = findTowns(cities, pts, h, waterLevel, habitability, nearWater, nearResource, cityCount, seed ^ 0xFEED);
-  const ruins = findRuins(pts, h, waterLevel, habitability, cities, towns, cityCount, seed ^ 0xDADE);
-  const minorRuins = findMinorRuins(pts, h, waterLevel, cityCount, seed ^ 0xABCD);
-  const trouble = findTrouble(pts, h, waterLevel, habitability, cities, towns, resources, ruins, cityCount, seed ^ 0xDEAD);
-  const features = generateFeatures(cityCount, rng);
+  const cities = findCities(pts, h, waterLevel, habitability, nearWater, nearResource, adjustedCityCount, seed ^ 0xCAFE);
+  const towns = findTowns(cities, pts, h, waterLevel, habitability, nearWater, nearResource, adjustedCityCount, seed ^ 0xFEED);
+  const ruins = findRuins(pts, h, waterLevel, habitability, cities, towns, adjustedCityCount, seed ^ 0xDADE);
+  const minorRuinsCount = Math.max(2, Math.round((4 + Math.floor(rng() * 6) + 1) * areaRatio));
+  const minorRuins = findMinorRuins(pts, h, waterLevel, minorRuinsCount, seed ^ 0xABCD);
+  const trouble = findTrouble(pts, h, waterLevel, habitability, cities, towns, resources, ruins, cityCount, areaRatio, seed ^ 0xDEAD);
+  const features = generateFeatures(cityCount, extentSize, rng);
 
   const outpostSites = [];
   const landmarkSites = [];

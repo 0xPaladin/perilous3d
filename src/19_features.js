@@ -338,8 +338,9 @@ function creatureSubtype(rng) {
 
 export { generatePlaceName };
 
-export function generateFeatures(safety, rng) {
-  const numFeatures = 8 + 2 * (1 + Math.floor(rng() * 8));
+export function generateFeatures(safety, extentSize, rng) {
+  const areaRatio = (extentSize / 320) ** 2;
+  const numFeatures = Math.max(4, Math.round((8 + 2 * (1 + Math.floor(rng() * 8))) * areaRatio));
   const features = [];
   for (let i = 0; i < numFeatures; i++) {
     const roll = d(rng, 12) + safety;
