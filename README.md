@@ -1,16 +1,25 @@
-# Perilous Shores 3D
+# Perilous 3D
 
-A browser-based 3D terrain generator using a **cartoon-style mountain** approach on a **320×320 km** map, rendered with **Three.js** OrbitControls.
+A browser-based 3D terrain generator inspired by: 
 
-**Live site:** https://0xPaladin.github.io/Outlands/
+* [Perilous Wilds](https://www.drivethrurpg.com/en/product/407161/the-perilous-wilds-revised-edition) by Jason Lutes (Lampblack & Brimstone)
+* [An Echo, Resounding](https://www.drivethrurpg.com/en/product/99063/an-echo-resounding-a-sourcebook-for-lordship-and-war) by Kevin Crawford (Sine Nomine Publishing)
+
+Code inspiration:
+
+* [Polygonal Map Generation for Games](http://www-cs-students.stanford.edu/~amitp/game-programming/polygon-map-generation/) by Amit Patel (Red Blob Games)
+* [Perilous Shores](https://watabou.github.io/perilous-shores/) by Watabou
+* [Azgaar's Fantasy Map Generator](https://github.com/Azgaar/Fantasy-Map-Generator)
+* https://github.com/mewo2/terrain by Martin O'Leary
+
+Perilous 3D generates a  **320×320 km** map with biome shading on a flat base mesh and low-poly terrain features. It uses **Three.js** for rendering and interaction.  
 
 ## Tech Stack
 
 - **Three.js r185** — 3D rendering, `BufferGeometry`, `MeshLambertMaterial`, `OrbitControls`
 - **Delaunator** — Delaunay triangulation (mesh topology for 3D terrain)
 - **lil-gui** — floating control panel for user parameters and actions
-- **Mulberry32** — seeded PRNG for deterministic generation
-- **Vanilla ES modules** — no bundler, served directly via `<script type="module">`
+- **Mulberry32 / ChanceJS** — seeded PRNG for deterministic generation
 - **HTML5 import maps** — CDN-based dependency loading
 
 ## Architecture
@@ -29,62 +38,83 @@ index.html
     │                      (inverted depressions: lake basin / bay blob)
     │                      + habitability scoring + cities/towns placement + resource deposits
     ├── 06_coast.js     — Chaikin smoothing (retained, unused by current pipeline)
-     ├── 07_mesher.js    — Delaunay triangles → Three.js indexed BufferGeometry
-    │                      + per-vertex biome colors (Azgaar 5×26 temperature × moisture matrix)
-    │                      + river mesh (LineSegments along downhill edges, width ∝ √flux)
-    │                      + settlement rendering (cities + towns) + resource markers (gold octahedrons)
-    │                      + ruins (stone pillar clusters) + minor ruins (tall gray obelisks)
-    │                      + trouble markers (inverted red pyramids)
+      ├── 07_mesher.js    — Delaunay triangles → Three.js indexed BufferGeometry
+     │                      + per-vertex biome colors (Azgaar 5×26 temperature × moisture matrix)
+     │                      + river mesh (LineSegments along downhill edges, width ∝ √flux)
+     │                      + settlement rendering (cities + towns) + resource markers (gold octahedrons)
+     │                      + ruins (stone pillar clusters) + minor ruins (tall gray obelisks)
+     │                      + trouble markers (inverted red pyramids)
+     │                      + site features: outpost tower, cyan landmark pillar, orange hazard pyramid,
+     │                        amber obstacle/area pillars
     ├── 08_colors.js    — PS terrain palette (used by mountain & hill tile color palettes)
     ├── 10_renderer.js  — Three.js scene, HemisphereLight + DirectionalLight (shadows),
      │                      cloud blobs (IcosahedronGeometry at Y=80–120), OrbitControls,
      │                      render loop with FPS counter
     ├── 11_ui.js         — progress overlay, seed display, URL sync
      ├── 17_gui.js         — lil-gui initialization: folders for Template, Parameters, Actions, Info
-     ├── 18_items.js       — locations panel with category select, item list, fly-to camera + zoom out
-    └── main.js          — bootstrap: seed → buildRegion → createScene → animate → initGUI
+       ├── 18_items.js       — locations panel (Cities, Towns, Resources, Dungeons, Ruins,
+      │                         Landmarks, Outposts, Hazards, Obstacles, Areas, Trouble)
+      │                         + item list + fly-to camera + zoom out
+      ├── 19_features.js    — regional feature generator: 8+2d8 features per region, each
+     │                         rolled 1d12+safety → creature/hazard/obstacle/area/named place/
+     │                         site/faction presence/settlement with sub-tables for each type
+     └── main.js          — bootstrap: seed → buildRegion → createScene → animate → initGUI
 ```
 
 ## Terrain Generation Pipeline
 
 ```
-Seed → Mulberry32 PRNG → 12000–20000 random points (320×320 km extent)
+Seed → ChanceJS PRNG → 12000–20000 random points (320×320 km extent)
      → Delaunator triangulation → adjacency graph
-     → N cartoon mountains (slider: 0–500, default 200)
-         clustered along 2–6 range backbones (per-template configs)
-         each with:
-           - Parabolic cone core  (1.2–5 km radius, sharp peak, compact support)
-           - Gaussian ground skirt (4× core radius, 20% amplitude)
-     → Baseline subtraction (min → 0)
-     → Island mask (smoothstep + angular perturbation, per-template radius/offset)
-     → Normalize [0,1] → sqrt (peaky)
-     → 8× hydraulic erosion (flux + slope → fill sinks)
-     → Fjord trench carve (before sea-level, always below water cutoff)
-     → Sea-level cut (quantile per template)
-     → Fill sinks → clean coast (remove 1-cell artifacts)
-     → Template-specific features (lake basin / bay blob inverted depressions)
-      → Rivers (downhill flux accumulation) → Moisture (Azgaar BFS + neighbor averaging)
-      → Temperature (latitudinal + elevation lapse) → Biomes (Azgaar 5×26 matrix)
-      → Habitability (biome × elevation × slope × water proximity, 0–125)
-      → Cities (top habitability sites, ≥32 km apart, coastal-biased)
-      → Towns (3 per city ≤30 km radius or 4 standalone, ≥25 km apart, coastal-biased)
-       → Resources (Max(#cities,2) biome-weighted deposits, one type per deposit)
-       → Great Ruins (1–2 abandoned city sites near settlements, ≥30 km apart)
-       → Minor Ruins (4+1d6 random tall gray obelisks anywhere on land, ≥20 km apart)
-       → Trouble (1 per resource + safety-based danger markers near settlements/ruins)
-       → Per-vertex heights, indexed mesh, vertex colors by biome index
+     → Terrain preset (wetland/lowland/woodland/highland/wasteland)
+         → determines mountain count (#/height/distribution) + overall rainfall
+         → clustered range-based mountains as before
+      → Baseline subtraction (min → 0)
+      → Island mask (smoothstep + angular perturbation, per-template radius/offset)
+      → Normalize [0,1] → sqrt (peaky)
+      → 8× hydraulic erosion (flux + slope → fill sinks)
+      → Fjord trench carve (before sea-level, always below water cutoff)
+      → Sea-level cut (quantile per template)
+      → Fill sinks → clean coast (remove 1-cell artifacts)
+      → Template-specific features (lake basin / bay blob inverted depressions)
+       → Rivers (downhill flux accumulation) → Moisture (Azgaar BFS + neighbor averaging) × terrain rainfall
+       → Temperature (latitudinal + elevation lapse) → Biomes (Azgaar 5×26 matrix)
+       → Habitability (biome × elevation × slope × water proximity, 0–125)
+       → Cities (top habitability sites, ≥32 km apart, coastal-biased)
+       → Towns (3 per city ≤30 km radius or 4 standalone, ≥25 km apart, coastal-biased)
+        → Resources (Max(#cities,2) biome-weighted deposits, one type per deposit)
+        → Great Ruins (1–2 abandoned city sites near settlements, ≥30 km apart)
+        → Minor Ruins (4+1d6 random tall gray obelisks anywhere on land, ≥20 km apart)
+         → Trouble (1 per resource + safety-based danger markers near settlements/ruins, all ≥15 km from cities/towns, typed from TROUBLE_TYPES table)
+         → Features (8+2d8 narrative features: creature/hazard/obstacle/area/named place/site/faction presence/settlement)
+           → Site→resource/ruin/dungeon/landmark/outpost resolved with placeSiteFeature + names from generatePlaceName
+           → Hazard/obstacle/area: roll terrain type + filter subtype compatibility + find matching cells
+           → Named place: 1d2 → ruin (minorRuins) or landmark (landmarkSites), carries name
+           → Faction presence: random city/town selected, stored in factionSites[]
+           → Lair/dwelling: push trouble marker with type from TROUBLE_TYPES
+         → Per-vertex heights, indexed mesh, vertex colors by biome index
 ```
 
 ### Per-Template Configuration
 
-| Template     | Water quantile | Mountain ranges | Coastline |
-|--------------|---------------|-----------------|-----------|
-| `island`     | 0.40 | 2–4 moderate ranges | Jagged circular island |
-| `archipelago`| 0.55 | 4–6 short narrow ranges | Small broken islands |
-| `bay`        | 0.005 | 1–3 long heavy ranges | Full land except bay blob from random edge |
-| `fjord`      | 0.01  | 3–5 very narrow ranges | Full land except fjord trench from random edge |
-| `lake`       | 0.005 | 2–4 ranges ringing center | Full land except central lake basin |
-| `land`       | 0.00 | 3–6 big continental belts | Fully continental, no water |
+| Template      | Water quantile | Mountain ranges           | Coastline                                      |
+| ------------- | -------------- | ------------------------- | ---------------------------------------------- |
+| `island`      | 0.40           | 2–4 moderate ranges       | Jagged circular island                         |
+| `archipelago` | 0.55           | 4–6 short narrow ranges   | Small broken islands                           |
+| `bay`         | 0.005          | 1–3 long heavy ranges     | Full land except bay blob from random edge     |
+| `fjord`       | 0.01           | 3–5 very narrow ranges    | Full land except fjord trench from random edge |
+| `lake`        | 0.005          | 2–4 ranges ringing center | Full land except central lake basin            |
+| `land`        | 0.00           | 3–6 big continental belts | Fully continental, no water                    |
+
+### Terrain Presets
+
+| Terrain    | Mountain count | Height scale | Rainfall | Distribution                                  |
+| ---------- | -------------- | ------------ | -------- | ---------------------------------------------- |
+| `wetland`  | 10–40          | 0.5×         | 1.8×     | 1–2 short wide ranges, low outlier             |
+| `lowland`  | 20–80          | 0.8×         | 1.0×     | 1–3 short medium ranges, low outlier           |
+| `woodland` | 40–120         | 1.0×         | 1.3×     | 2–4 moderate ranges, moderate outlier          |
+| `highland` | 100–300        | 1.5×         | 0.8×     | 2–4 moderate ranges, higher outlier            |
+| `wasteland`| 5–30           | 0.6×         | 0.4×     | 1–3 long narrow ranges, high outlier           |
 
 ### 3D Mesh
 
@@ -106,26 +136,26 @@ python -m http.server 8000
 ### URL Parameters
 
 ```
-https://0xPaladin.github.io/Outlands/?template=island&seed=ABCD1234&mountains=200&temp=22&safety=1
+?template=island&seed=ABCD1234&terrain=highland&climate=Temperate&safety=1
 ```
 
-| Param      | Values                    | Description                              |
-|------------|---------------------------|------------------------------------------|
-| `template` | `island`, `archipelago`, `bay`, `fjord`, `lake`, `land` | Map template (affects sea level) |
-| `seed`     | any URL-safe string        | Deterministic map seed                   |
-| `mountains` | 0–500                    | Number of mountain peaks                 |
-| `temp`     | 0–35                      | Base temperature in °C                   |
-| `safety`   | 0–3                       | Cities: Perilous(0) / Dangerous(1) / Unsafe(2) / Safe(3) |
+| Param       | Values                                                  | Description                                              |
+| ----------- | ------------------------------------------------------- | -------------------------------------------------------- |
+| `template`  | `island`, `archipelago`, `bay`, `fjord`, `lake`, `land` | Map template (affects sea level)                         |
+| `seed`      | any URL-safe string                                     | Deterministic map seed                                   |
+| `terrain`   | `wetland`, `lowland`, `woodland`, `highland`, `wasteland` | Terrain preset (counts, heights, rainfall)           |
+| `climate`   | `Arctic`, `Sub-arctic`, `Temperate`, `Sub-tropical`, `Tropical` | Climate preset (base temperature)           |
+| `safety`    | 0–3                                                     | Cities: Perilous(0) / Dangerous(1) / Unsafe(2) / Safe(3) |
 
 ## Controls
 
 - **OrbitControls**: left-click rotate, right-click pan, scroll to zoom
 - **lil-gui** (top-right panel):
   - **Template** → map template dropdown
-  - **Parameters** → Mountains (0–500), Base Temp (0–35°C), Safety (Perilous/Dangerous/Unsafe/Safe)
+  - **Parameters** → Terrain (wetland/lowland/woodland/highland/wasteland), Climate (Arctic/Sub-arctic/Temperate/Sub-tropical/Tropical), Safety (Perilous/Dangerous/Unsafe/Safe)
   - **Actions** → `New Island`, `Update`
   - **Info** → current seed (read-only)
-- **Locations panel** (below GUI): category select (Cities, Towns, Resources, Ruins, Trouble) → clickable item list → smooth fly-to camera; Zoom Out button returns to default view
+- **Locations panel** (left panel, below GUI): category select (Cities, Towns, Resources, Dungeons, Ruins, Landmarks, Outposts, Hazards, Obstacles, Areas, Trouble) → clickable item list → smooth fly-to camera; Zoom Out button returns to default view. Dungeons, Ruins, and Landmarks display generated names where available. Hazards, obstacles, areas display type; trouble displays danger type; factions display faction type.
 
 ## Habitability & Settlements
 
@@ -172,7 +202,7 @@ Rendered as **gold octahedrons** (radius 1.2) floating Y = terrain + 2.0 in `bui
 `findMinorRuins()` scatters **4 + 1d6 (5–10)** random **tall gray obelisks** anywhere on land with **≥20 km** separation. Rendered as `CylinderGeometry(0.3, 0.4, 3.5)` standing at terrain Y + 1.75.
 
 ### Trouble
-`findTrouble()` places danger markers in two tiers:
+`findTrouble()` places danger markers in two tiers (all cells ≥15 km from any city or town):
 - **Resource trouble**: exactly **1 per resource** — the worst-habitability land cell within **~20 km** of each deposit
 - **Safety-scaled extras**: `(3 − safety) × 2` additional markers
   - **Perilous (0)**: 6 extras
@@ -183,6 +213,30 @@ Rendered as **gold octahedrons** (radius 1.2) floating Y = terrain + 2.0 in `bui
   - Half land directly on random ruin sites
 
 Rendered as **inverted red pyramids** (`ConeGeometry` rotated π) in `buildTrouble()`.
+
+### Regional Features
+`generateFeatures()` in `19_features.js` generates `8 + 2d8` narrative features per region — prompts for the Judge to develop during play. Each feature is rolled `1d12 + safety`, mapping to:
+
+- **1–4 Creature**: sub-type rolled 1d12 → Monster (legendary/extraplanar/undead/fearsome), Beast (water-going/airborne/earthbound), or Humanoid (rare/uncommon/common)
+- **5 Hazard**: 1d10 category (unnatural → taint/magical/planar/divine; natural → oddity/tectonic/precipitous/ensnaring/defensive/meteorological/seasonal/impairing)
+- **6 Obstacle**: 1d10 category (unnatural → magical/planar/divine; natural → oddity/defensive/impenetrable/penetrable/traversable)
+- **7 Area**: 1d10 category (unnatural → magical/planar/divine; natural → oddity/hazard-based/obstacle-based/hunting ground/claimed territory/difficult terrain)
+- **8 Named Place**: rolled from Random Place name tables (d12 template × d100 components)
+- **9–11 Site**: 1d10 subcategory → dungeon, lair/dwelling, ruin, outpost, landmark, or resource (each with weighted sub-tables)
+- **12 Faction Presence**: 1d10 faction type, 1d8 primary goal, 1d6 condition
+- **13+ Settlement**: placeholder for settlement generation
+
+Site → resource and site → ruin/dungeon features are resolved in `buildRegion()` using `generateResources()` and `findRuins()`/`findMinorRuins()` from `05_terrain.js`, placing actual map resources, minor ruins, and great ruins at the generated locations. Named place, site→landmark, site→ruin, and site→dungeon all call `generatePlaceName()` (exported from `19_features.js`) to produce names like "The Broken Tower" or "The Doomed Gate".
+
+Outpost → `placeSiteFeature()` helper (random land cell ≥15 km from cities/towns, tracked for mutual separation). Landmark → `generatePlaceName()` + `placeSiteFeature()`, stored in `region.landmarkSites[]` with name. Named place → 1d2 roll: ruin (pushed to `region.minorRuins[]`) or landmark (pushed to `region.landmarkSites[]`). Lair/dwelling → pushes a trouble marker with type `'lair'` to `region.trouble[]`.
+
+Hazard/obstacle/area features roll a terrain type (`land`/`mountains`/`hills`/`forest`/`river`/`water`), filter sub-type against terrain compatibility (checking `hazardCompatibleWithTerrain()` / `obstacleCompatibleWithTerrain()` / `areaCompatibleWithTerrain()`), then find matching cells via `findCellsByTerrain()` and place markers. Meteorological hazards are region-wide (no marker). Area markers include neighbor cells within ~3 km to suggest extent. All placed features enforce ≥15 km from any city or town and ≥10 km from other same-type markers.
+
+Outpost, landmark, hazard, obstacle, and area data is stored in `region.outpostSites[]`, `region.landmarkSites[]`, `region.hazards[]`, `region.obstacles[]`, `region.areas[]` respectively, and rendered by `buildSiteFeatures()` in `07_mesher.js`:
+- **Outpost**: gray stone cylinder + red cone roof tower (`CylinderGeometry(0.4,0.5,0.8)` + `ConeGeometry(0.5,0.3)`)
+- **Landmark**: cyan emissive pillar (`CylinderGeometry(0.2,0.3,1.5)`, emissive color `0x44ddff`)
+- **Hazard**: orange inverted pyramid (`ConeGeometry(0.6,1.0,4)`, color `0xdd6633`)
+- **Obstacle/Area**: amber pillars (`CylinderGeometry(0.2,0.3,1.2)`, color `0xbb8844`); area includes neighbor markers
 
 ## Algorithm Notes
 
@@ -218,13 +272,7 @@ Rendered as **inverted red pyramids** (`ConeGeometry` rotated π) in `buildTroub
 
 **Minor Ruins** — `findMinorRuins()` scatters 4 + 1d6 (5–10) tall gray obelisks at random land cells, spaced ≥20 km apart. Rendered as `CylinderGeometry(0.3, 0.4, 3.5)` standing at terrain Y + 1.75.
 
-**Trouble** — `findTrouble()` in `05_terrain.js` places danger markers: exactly 1 per resource (worst habitability within ~20 km), plus safety-scaled extras — Perilous=6, Dangerous=4, Unsafe=2, Safe=0. Half the extras land within ~30 km of a city/town (worst habitability), the other half on random ruin sites. Rendered as inverted red pyramids (`ConeGeometry` rotated π) in `buildTrouble()`.
-
-## Credits
-
-- **Terrain concept**: inspired by [mewo2/terrain](https://github.com/mewo2/terrain) — Voronoi-based fantasy map generator
-- **Original Perilous Shores**: [watabou](https://github.com/watabou/perilous-shores) — hex-based procedural generation
-- **3D rendering**: inspired by **Procedural Island** by simsome/Norbet
+**Trouble** — `findTrouble()` in `05_terrain.js` places danger markers: exactly 1 per resource (worst habitability within ~20 km), plus safety-scaled extras — Perilous=6, Dangerous=4, Unsafe=2, Safe=0. Half the extras land within ~30 km of a city/town (worst habitability), the other half on random ruin sites. All trouble cells are ≥15 km from any city or town (added to the inner `addTrouble()` function). Lair/dwelling features from the resolution loop also push a `'lair'` trouble marker using the same distance constraints. Rendered as inverted red pyramids (`ConeGeometry` rotated π) in `buildTrouble()`.
 
 ## License
 

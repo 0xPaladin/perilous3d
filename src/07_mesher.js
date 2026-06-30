@@ -267,3 +267,83 @@ export function buildResources(region) {
 
   return group;
 }
+
+export function buildSiteFeatures(region) {
+  const { outpostSites, landmarkSites, hazards, obstacles, areas, heights, waterLevel } = region;
+  const group = new THREE.Group();
+  group.name = 'siteFeatures';
+
+  const outpostMat = new THREE.MeshLambertMaterial({ color: 0x888888 });
+  const outpostRoof = new THREE.MeshLambertMaterial({ color: 0xcc4444 });
+  const landmarkMat = new THREE.MeshLambertMaterial({ color: 0x44ddff, emissive: 0x44ddff });
+  const hazardMat = new THREE.MeshLambertMaterial({ color: 0xdd6633 });
+  const obstacleMat = new THREE.MeshLambertMaterial({ color: 0xbb8844 });
+
+  if (outpostSites && outpostSites.length) {
+    for (const s of outpostSites) {
+      const wall = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.5, 0.8, 6), outpostMat);
+      const terrainY = heights[s.idx] > waterLevel ? 0.1 : 0.0;
+      wall.position.set(s.x, terrainY + 0.4, s.z);
+      wall.castShadow = true;
+      group.add(wall);
+      const roof = new THREE.Mesh(new THREE.ConeGeometry(0.5, 0.3, 6), outpostRoof);
+      roof.position.set(s.x, terrainY + 0.85, s.z);
+      roof.castShadow = true;
+      group.add(roof);
+    }
+  }
+
+  if (landmarkSites && landmarkSites.length) {
+    for (const s of landmarkSites) {
+      const terrainY = heights[s.idx] > waterLevel ? 0.1 : 0.0;
+      const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.3, 1.5, 6), landmarkMat);
+      pillar.position.set(s.x, terrainY + 0.75, s.z);
+      pillar.castShadow = true;
+      group.add(pillar);
+    }
+  }
+
+  if (hazards && hazards.length) {
+    for (const h of hazards) {
+      if (h.regionWide) continue;
+      const terrainY = heights[h.idx] > waterLevel ? 0.1 : 0.0;
+      const pyramid = new THREE.Mesh(new THREE.ConeGeometry(0.6, 1.0, 4), hazardMat);
+      pyramid.position.set(h.x, terrainY + 0.3, h.z);
+      pyramid.rotation.x = Math.PI;
+      pyramid.rotation.y = Math.PI / 4;
+      pyramid.castShadow = true;
+      group.add(pyramid);
+    }
+  }
+
+  if (obstacles && obstacles.length) {
+    for (const o of obstacles) {
+      const terrainY = heights[o.idx] > waterLevel ? 0.1 : 0.0;
+      const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.3, 1.2, 6), obstacleMat);
+      pillar.position.set(o.x, terrainY + 0.6, o.z);
+      pillar.castShadow = true;
+      group.add(pillar);
+    }
+  }
+
+  if (areas && areas.length) {
+    for (const a of areas) {
+      const terrainY = heights[a.idx] > waterLevel ? 0.1 : 0.0;
+      const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.3, 1.2, 6), obstacleMat);
+      pillar.position.set(a.x, terrainY + 0.6, a.z);
+      pillar.castShadow = true;
+      group.add(pillar);
+      if (a.neighbors) {
+        for (const n of a.neighbors) {
+          const nY = heights[n.idx] > waterLevel ? 0.1 : 0.0;
+          const np = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.3, 1.0, 6), obstacleMat);
+          np.position.set(n.x, nY + 0.5, n.z);
+          np.castShadow = true;
+          group.add(np);
+        }
+      }
+    }
+  }
+
+  return group;
+}

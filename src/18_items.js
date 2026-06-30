@@ -14,7 +14,14 @@ export function initItemsPanel(app) {
       <option value="cities">Cities</option>
       <option value="towns">Towns</option>
       <option value="resources">Resources</option>
+      <option value="dungeons">Dungeons</option>
       <option value="ruins">Ruins</option>
+      <option value="landmarks">Landmarks</option>
+    <option value="outposts">Outposts</option>
+    <option value="factions">Factions</option>
+    <option value="hazards">Hazards</option>
+      <option value="obstacles">Obstacles</option>
+      <option value="areas">Areas</option>
       <option value="trouble">Trouble</option>
     </select>
     <div id="ip-list"></div>
@@ -33,7 +40,14 @@ export function initItemsPanel(app) {
     cities: region.cities || [],
     towns: region.towns || [],
     resources: region.resources || [],
-    ruins: [...(region.ruins || []).map(r => ({ ...r, _subtype: 'Great Ruins' })), ...(region.minorRuins || []).map(r => ({ ...r, _subtype: 'Minor Ruins' }))],
+    dungeons: (region.ruins || []).map(r => ({ ...r, _subtype: 'dungeon' })),
+    ruins: (region.minorRuins || []).map(r => ({ ...r, _subtype: 'ruin' })),
+    landmarks: (region.landmarkSites || []).map(r => ({ ...r, _subtype: 'landmark' })),
+    outposts: (region.outpostSites || []).map(o => ({ ...o, _subtype: 'outpost' })),
+    factions: (region.factionSites || []).map(f => ({ ...f, _subtype: 'faction' })),
+    hazards: (region.hazards || []).filter(h => !h.regionWide).map(h => ({ ...h, _subtype: 'hazard' })),
+    obstacles: (region.obstacles || []).map(o => ({ ...o, _subtype: 'obstacle' })),
+    areas: (region.areas || []).map(a => ({ ...a, _subtype: 'area' })),
     trouble: region.trouble || [],
   };
 
@@ -53,8 +67,18 @@ export function initItemsPanel(app) {
       if (cat === 'cities') label = `City @ ${x}, ${y}`;
       else if (cat === 'towns') label = `Town @ ${x}, ${y}`;
       else if (cat === 'resources') label = `${item.type} @ ${x}, ${y}`;
-      else if (cat === 'ruins') label = `${item._subtype || 'Ruins'} @ ${x}, ${y}`;
-      else if (cat === 'trouble') label = `Trouble @ ${x}, ${y}`;
+      else if (cat === 'dungeons') label = item.name ? `${item.name} @ ${x}, ${y}` : `Dungeon @ ${x}, ${y}`;
+      else if (cat === 'ruins') label = item.name ? `${item.name} @ ${x}, ${y}` : `Ruins @ ${x}, ${y}`;
+      else if (cat === 'landmarks') label = item.name ? `${item.name} @ ${x}, ${y}` : `Landmark @ ${x}, ${y}`;
+      else if (cat === 'outposts') label = `Outpost @ ${x}, ${y}`;
+      else if (cat === 'factions') {
+        const ft = item.faction?.type || 'Faction';
+        label = `${ft} @ ${x}, ${y}`;
+      }
+      else if (cat === 'hazards') label = `${item.type || 'Hazard'} @ ${x}, ${y}`;
+      else if (cat === 'obstacles') label = `${item.type || 'Obstacle'} @ ${x}, ${y}`;
+      else if (cat === 'areas') label = `${item.type || 'Area'} @ ${x}, ${y}`;
+      else if (cat === 'trouble') label = `${item.type || 'Trouble'} @ ${x}, ${y}`;
       html += `<div class="ip-item" data-x="${item.x}" data-z="${item.z}">${label}</div>`;
     }
     listEl.innerHTML = html;

@@ -12,7 +12,27 @@ import { initItemsPanel } from './18_items.js';
 
 const app = { sceneState: null, seed: null, seedStr: null };
 
-function generate(template, seedStr, mountainCount, baseTemp, safety) {
+const CLIMATE_TEMP = {
+  'Arctic': -10,
+  'Sub-arctic': 5,
+  'Temperate': 22,
+  'Sub-tropical': 28,
+  'Tropical': 32,
+};
+
+function climateToTemp(climate) {
+  return CLIMATE_TEMP[climate] ?? 22;
+}
+
+function tempToClimate(temp) {
+  if (temp <= -5) return 'Arctic';
+  if (temp <= 15) return 'Sub-arctic';
+  if (temp <= 25) return 'Temperate';
+  if (temp <= 30) return 'Sub-tropical';
+  return 'Tropical';
+}
+
+function generate(template, seedStr, terrain, climate, safety) {
   app.seedStr = seedStr;
   const seed = seedFromString(seedStr);
   const seedNum = seed.toString(36).toUpperCase();
@@ -28,10 +48,11 @@ function generate(template, seedStr, mountainCount, baseTemp, safety) {
   canvas.innerHTML = '';
 
   const cityCount = safety || 0;
+  const baseTemp = climateToTemp(climate);
 
   let region;
   try {
-    region = buildRegion(template, 55, 55, seed, mountainCount, baseTemp, cityCount);
+    region = buildRegion(template, 55, 55, seed, terrain, baseTemp, cityCount);
   } catch (e) {
     console.error('terrain generation failed:', e);
     progressPanel.hide();
@@ -53,8 +74,9 @@ function generate(template, seedStr, mountainCount, baseTemp, safety) {
   const url = new URL(window.location);
   url.searchParams.set('template', template);
   url.searchParams.set('seed', seedNum);
-  url.searchParams.set('mountains', mountainCount);
+  url.searchParams.set('terrain', terrain);
   url.searchParams.set('temp', baseTemp);
+  url.searchParams.set('climate', climate);
   url.searchParams.set('safety', safety);
   history.replaceState({}, '', url);
 }
@@ -81,13 +103,37 @@ function logRegionStats(region) {
   console.log('Ruins:', region.ruins || []);
   console.log('Minor Ruins:', region.minorRuins || []);
   console.log('Trouble:', region.trouble || []);
+  console.log('Outposts:', region.outpostSites || []);
+  console.log('Landmarks:', region.landmarkSites || []);
+  console.log('Factions:', region.factionSites || []);
+  console.log('Hazards:', region.hazards || []);
+  console.log('Obstacles:', region.obstacles || []);
+  console.log('Areas:', region.areas || []);
+  if (region.features && region.features.length) {
+    console.log(`Features (${region.features.length}):`);
+    region.features.forEach((f, i) => {
+      const parts = [`${i + 1}. ${f.type}`];
+      if (f.subtype) parts.push(`subtype=${JSON.stringify(f.subtype)}`);
+      if (f.hazard) parts.push(`hazard=${JSON.stringify(f.hazard)}`);
+      if (f.obstacle) parts.push(`obstacle=${JSON.stringify(f.obstacle)}`);
+      if (f.area) parts.push(`area=${JSON.stringify(f.area)}`);
+      if (f.name) parts.push(`name="${f.name}"`);
+      if (f.site) parts.push(`site=${JSON.stringify(f.site)}`);
+      if (f.faction) parts.push(`faction=${JSON.stringify(f.faction)}`);
+      console.log('  ' + parts.join(' | '));
+    });
+  }
 }
 
 // Load URL seed or generate new
 const urlParams = new URLSearchParams(window.location.search);
 const initialTemplate = urlParams.get('template') || 'island';
-const initialMountains = urlParams.get('mountains') ? parseInt(urlParams.get('mountains'), 10) : 200;
-const initialTemp = urlParams.get('temp') ? parseInt(urlParams.get('temp'), 10) : Math.floor(Math.random() * 30 + 5);
+const initialTerrain = urlParams.get('terrain') || 'highland';
+let initialClimate = urlParams.get('climate');
+if (!initialClimate) {
+  const t = urlParams.get('temp') ? parseInt(urlParams.get('temp'), 10) : climateToTemp('Temperate');
+  initialClimate = tempToClimate(t);
+}
 const initialSafety = urlParams.get('safety') ? parseInt(urlParams.get('safety'), 10) : 0;
 const initialSeed = urlParams.get('seed') || (Math.random().toString(36).substring(2, 10) + Date.now().toString(36));
 
@@ -96,9 +142,9 @@ initGUI({
   app,
   generate,
   initialTemplate,
-  initialMountains,
-  initialTemp,
+  initialTerrain,
+  initialClimate,
   initialSafety,
 });
 
-generate(initialTemplate, initialSeed, initialMountains, initialTemp, initialSafety);
+generate(initialTemplate, initialSeed, initialTerrain, initialClimate, initialSafety);

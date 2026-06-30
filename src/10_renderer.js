@@ -44,7 +44,7 @@ export function createScene(canvas, region) {
   // ---- Terrain mesh ----
   const state = { scene, camera, renderer, controls };
 
-  import('./07_mesher.js').then(({ buildTerrainMesh, buildRiverMesh, buildTrees, buildSettlements, buildResources, buildTrouble }) => {
+  import('./07_mesher.js').then(({ buildTerrainMesh, buildRiverMesh, buildTrees, buildSettlements, buildResources, buildTrouble, buildSiteFeatures }) => {
     const terrainMesh = buildTerrainMesh(region);
     terrainMesh.receiveShadow = true;
     scene.add(terrainMesh);
@@ -56,6 +56,7 @@ export function createScene(canvas, region) {
     scene.add(buildSettlements(region));
     scene.add(buildResources(region));
     scene.add(buildTrouble(region));
+    scene.add(buildSiteFeatures(region));
 
     state.terrain = terrainMesh;
   });
