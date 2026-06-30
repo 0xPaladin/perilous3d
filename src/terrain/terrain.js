@@ -632,7 +632,7 @@ const BIOMES_MATRIX = [
 const HABITABILITY = [0, 4, 10, 22, 30, 50, 100, 90, 80, 12, 4, 0, 12];
 
 function biomeFromMatrix(normH, tempBand, moisture) {
-  if (normH < 0) return 0;
+  if (normH <= 0) return 0;
   if (normH > 0.80) return 11;
   const moistureBand = Math.min(Math.floor(moisture / 5), 4);
   return BIOMES_MATRIX[moistureBand][tempBand];
