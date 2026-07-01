@@ -10,7 +10,7 @@ Browser-based procedural terrain generator with **cartoon-style mountains** on a
 
 ```
 perilous3d/
-├── index.html          # shell with import maps (three, delaunator, lil-gui) + inline CSS + UI chrome
+├── index.html          # shell with import maps (three, delaunator, lil-gui, simplex-noise) + inline CSS + UI chrome
 ├── README.md           # full architecture + algorithm notes
 ├── AGENTS.md           # 🤖 you are here
 └── src/
@@ -18,27 +18,28 @@ perilous3d/
     ├── noise.js     # Perlin + FractalNoise (retained, unused by current pipeline)
     ├── grid.js      # Vec2, hex grid, DCEL (retained, unused by current pipeline)
     ├── raisers.js   # Skeleton/midpoint-displacement raisers (retained, unused)
-├── terrain/terrain.js   # FULL PIPELINE (queue-based command architecture):
-│                    #   Terrain state commands (Scale/Rainfall) + template scripts (Hill/Range/Apply/
-│                    #   Mask/SeaLevel/Fjord/Lake/Bay/LandClamp) → parseCommand → processTerrainCommands
-│                    #   (hill/pit circular features, ridge/trough Gaussian cross-section with wiggle+spurs,
-│                    #   Apply flushes queue with shapePower/noiseAmp) → height field
-│                    #   → island mask (smoothstep + angular perturbation) → peaky → hydraulic erosion
-│                    #   → fjord trench carve → sea-level → fill sinks → coast clean
-│                    #   → template-specific features (lake basin / bay blob / land clamp)
-│                    #   + temperature (latitudinal + elevation lapse) + moisture (Azgaar neighbor-averaging)
-│                    #   + rivers (flux accumulation) + biomes (Azgaar 5×26 matrix)
-│                    #   + habitability (biome base × elevation gaussian × slope penalty + water proximity)
-│                    #   + cities (top habitability sites, ≥32 km separation, coastal + resource-biased)
-│                    #   + towns (3 per city or 4 standalone if 0 cities, within 30 km of parent,
-│                    #         ≥25 km separation, coastal + resource-biased)
-│                    #   + resources (Max(#cities,2) biome-weighted deposits: game/hide/fur, timber/clay,
-│                    #         herb/spice/dye, copper/tin/iron, silver/gold/gems, exotic)
-│                    #   + trouble (danger markers: 1 per resource + safety-based extras near
-│                    #         settlements/ruins, worst habitability within ~20–30 km, ≥15 km from cities/towns)
-│                    #   + features resolution (features loop expands: site→dungeon/ruin/landmark/outpost/
-│                    #         lair+dwelling generate place names + place map markers; hazard/obstacle/area roll
-│                    #         terrain type + filter subtype compatibility + find matching cells + place markers)
+├── terrain/terrain.js   # FULL PIPELINE (simplex noise base + feature uplift):
+    │                    #   Terrain state commands (Scale/Rainfall) + template scripts (Hill/Range/Apply)
+    │                    #   → parseCommand → processTerrainCommands
+    │                    #   Step 1: generateSimplexBase — FBM (6 octaves, persistence 0.5, lacunarity 2.0,
+    │                    #     baseFreq 2.0) + redistribution (pow(e*1.2, 2.5)) → 0-1 height field
+    │                    #   Step 2: Feature uplift — Hill/Pit with linear taper (1-d/r) within radius,
+    │                    #     Range/Trough with Gaussian cross-section (wiggle+spurs), no skirt/noise jitter
+    │                    #   Step 3: Manhattan distance island mask (|x|+|y| diamond shape, smoothstep)
+    │                    #   Step 4: Water level fixed at 0.5 → fill sinks
+    │                    #   + temperature (latitudinal + elevation lapse) + moisture (Azgaar neighbor-averaging)
+    │                    #   + rivers (flux accumulation) + biomes (Azgaar 5×26 matrix)
+    │                    #   + habitability (biome base × elevation gaussian × slope penalty + water proximity)
+    │                    #   + cities (top habitability sites, ≥32 km separation, coastal + resource-biased)
+    │                    #   + towns (3 per city or 4 standalone if 0 cities, within 30 km of parent,
+    │                    #         ≥25 km separation, coastal + resource-biased)
+    │                    #   + resources (Max(#cities,2) biome-weighted deposits: game/hide/fur, timber/clay,
+    │                    #         herb/spice/dye, copper/tin/iron, silver/gold/gems, exotic)
+    │                    #   + trouble (danger markers: 1 per resource + safety-based extras near
+    │                    #         settlements/ruins, worst habitability within ~20–30 km, ≥15 km from cities/towns)
+    │                    #   + features resolution (features loop expands: site→dungeon/ruin/landmark/outpost/
+    │                    #         lair+dwelling generate place names + place map markers; hazard/obstacle/area roll
+    │                    #         terrain type + filter subtype compatibility + find matching cells + place markers)
     ├── terrain/coast.js     # Chaikin smoothing (retained, unused by current pipeline)
     ├── mesh/mesher.js    # Delaunay triangles → indexed THREE.BufferGeometry + vertex colors
     │                    #   + river mesh (LineSegments)
@@ -72,7 +73,7 @@ perilous3d/
 
 - ES module syntax (`import`/`export`), one responsibility per file
 - **terrain/terrain.js** exports `buildRegion(template, cols, rows, seed, terrain, baseTemp, cityCount, extentSize = 320)` → returns `{ pts, triangles, heights, heightMin, heightMax, extent, waterLevel, mounts, rivers, moisture, temperature, tempBand, biome, habitability, nearWater, cities, towns, resources, ruins, minorRuins, trouble, features, outpostSites, landmarkSites, factionSites, hazards, obstacles, areas, ... }` where `mounts` is an array of `{ x, y, r, peakHeight }` for each mountain/hill feature (only the most prominent are returned — all hills still shape the terrain); `rivers` has `segments` (downhill edges) and `flux` (flow accumulation); `moisture` has per-vertex values in ~4–50 range (× terrain rainfall); `biome` has per-vertex Azgaar biome indices (0–12); `habitability` is a Float64Array (~0–125) scoring how suitable each cell is for towns; `nearWater` is a Uint8Array marking cells within ~3 hops of a coast/river; `cities` is `[{ x, z, idx, habitability }]` top-sorted land cells spaced ≥32 km apart, coastal-biased; `towns` is the same shape, placed ≤30 km from parent city (3 per city) or 4 standalone sites when 0 cities exist, spaced ≥25 km apart, coastal-biased; `resources` is `[{ x, z, idx, type }]` for Max(#cities,2) biome-weighted mineral/food deposits; `ruins` is `[{ x, z, idx, name }]` for 1–2 elevated habitability sites near settlements (dungeon resolution adds `name`); `minorRuins` is `[{ x, z, idx, name }]` for 4+1d6 random obelisks anywhere on land (site→ruin and named→ruin resolution add `name`); `trouble` is `[{ x, z, idx, type }]` danger markers (1 per resource + safety-scaled extras near settlements/ruins, all ≥15 km from cities/towns, type drawn from TROUBLE_TYPES table); `factionSites` is `[{ x, z, idx, faction }]` for faction presence features bound to a city/town
-- Heights are raw values (post-sea-level-cut); underwater vertices are negative, sea level = 0
+- Heights are 0–1+ (simplex noise + feature uplift); water level is 0.5 (hardcoded, UI slider planned)
 - **mesh/mesher.js** flattens terrain to `Y = 0.1` for land and `Y = 0.0` for water; river lines float above at `0.2` (land) / `0.05` (water); biome colors are still derived from the original height field; settlements render as procedural Three.js meshes added to a `settlements` group
 - Colors are linear RGB `[0-1]` floats; vertex colors assigned by Azgaar 5×26 biome matrix (temperature × moisture) in `terrain/terrain.js` → `BIOME_COLORS` lookup in `mesh/mesher.js`
 - **mesh/mesh_features.js** places meshDev 3D meshes on the terrain surface using the `mounts` array for peak positions and nearest-neighbor terrain height lookup; skips forest clusters within **5 km** of any city or town so they stay visible
@@ -84,12 +85,12 @@ perilous3d/
 | What you want to do              | Where to look                                                                                                                                                                             |
 | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Tune mountain count/distribution | `src/gui/gui.js` `Parameters.Terrain` (wetland/lowland/woodland/highland/wasteland) → mapped in `terrain/terrain.js` `TERRAIN_STATE_CMDS` (Scale/Rainfall strings) + `TEMPLATE_SCRIPTS` (Hill/Range/Apply strings per template)          |
-| Tune mountain/hill size          | `terrain/terrain.js` → `generateHillFeatures()` → `diameter: runif(8, 22, rng)` for hills, × `sizeScale`. Ridge peak radius: `runif(3, 6, rng)` in `generateRidgeFeature()`, both × `sizeScale` / effective height via `Apply`'s `scale` × `state.scale`                                                                   |
-| Change mountain shape            | `terrain/terrain.js` → `mountainFalloff(d, r, shapePower)` — power-law `pow(1 - t², shapePower)` core + linear skirt (r→2r, 3.5% strength). `shapePower` set per `Apply` command (0.35 tight → 0.8 broad)            |
+| Tune mountain/hill size          | `terrain/terrain.js` → `generateHillFeatures()` → `diameter: runif(8, 22, rng)` for hills, × `sizeScale`. Ridge peak radius: `runif(3, 6, rng)` in `generateRidgeFeature()`, both × `sizeScale` / effective height via `state.scale` (set by Scale command) |
+| Change mountain shape            | Hills: linear taper `1 - d/r` within radius, no skirt. Ridges: Gaussian cross-section (kept from original). Tune via hill/range height parameters in templates |
 | Tune mountain range curvature    | `terrain/terrain.js` → `generateRidgeFeature()` — `wiggleAmp` (ridgeWidth × 0.5–1.0), `wiggleFreq` (1.5–3.5 oscillations), `wigglePhase` control the sinusoidal ridge centerline                                |
-| Tune coastline jaggedness        | `terrain/terrain.js` → `maskConfigs` perturbation amplitudes                                                                                                                                   |
-| Change erosion amount            | `terrain/terrain.js` → `doErosion()` parameters                                                                                                                                                |
-| Adjust sea level per template    | `terrain/terrain.js` → `waterQuantile` lookup                                                                                                                                                  |
+| Tune base noise frequency        | `terrain/terrain.js` → `generateSimplexBase()` — `baseFreq` (2.0), `exponent` (2.5), `persistence` (0.5), `fudge` (1.2)                         |
+| Adjust water level               | `terrain/terrain.js` → `buildRegion()` — `waterLevel = 0.5` (hardcoded, planned as UI slider)                                  |
+| Tune island shape / mask radius  | `terrain/terrain.js` → `MASK_RADII` — `island: 0.44`, `archipelago: 0.40`, `land: 5.0` (Manhattan distance)                                                                   |
 | Tweak biome colors               | `mesh/mesher.js` → `BIOME_COLORS` array (index 0–12 → RGB)                                                                                                                                  |
 | Increase mesh detail             | `terrain/terrain.js` → `npts` (point count, scales with area)                                                                                                                                 |
 | Change map size                  | `src/gui/gui.js` `Parameters.Map Size (km)` (50–400) → passed as `extentSize` to `buildRegion()` — scales point count, mountain count/dimensions, city/resource/feature counts by area    |
@@ -107,7 +108,7 @@ perilous3d/
 | Adjust forest elevation range    | `mesh/mesh_features.js` → `normH` filter thresholds (0.06–0.55) in `buildMeshForests()`                                                                                                     |
 | Tune mesh mountain placement     | `mesh/mesh_features.js` → `buildMeshMountains()` — xyScale/yScale multipliers, tileH formula, hill yScale (r*0.18) vs mountain yScale (r*0.35)                                              |
 | Filter visible 3D mounts         | `terrain/terrain.js` → `generateTerrain()` post-loop: sorts by `peakHeight`, keeps top ~25 (scaled by area) in returned `mounts` array. All hills still shape the height field.              |
-| Add noise detail layer           | Reintegrate `noise.js` into `terrain/terrain.js` pipeline                                                                                                                                   |
+| Tune noise detail / frequencies  | `terrain/terrain.js` → `generateSimplexBase()` — `octaves`, `persistence`, `lacunarity`, `baseFreq`, `exponent`, `fudge`                                                                     |
 | Share a world                    | URL auto-updated with `?template=X&seed=Y&terrain=Z&climate=W&safety=S&size=N`                                                                                                               |
 | Show feature types in UI         | `gui/items.js` labels for hazards (`item.type`), obstacles (`item.type`), areas (`item.type`), trouble (`item.type`), factions (`item.faction.type`)                                           |
 | Generate regional features       | `terrain/features.js` → `generateFeatures(safety, rng)` — 8+2d8 rolls of 1d12+safety: creature/hazard/obstacle/area/named place/site/faction presence/settlement, each with generator sub-tables |
@@ -116,11 +117,11 @@ perilous3d/
 
 - **PRNG**: Mulberry32 (embedded in `terrain/terrain.js`), seeded from `seedFromString()` via `prng.js`
 - **Triangulation**: Delaunator — points scale with map area (3K minimum, ~15–20K at 320 km, ~23–31K at 400 km) → indexed triangle mesh
-- **Mountains**: Queue-based command architecture. `TERRAIN_STATE_CMDS` sets Scale/Rainfall per terrain type, `TEMPLATE_SCRIPTS` defines Hill/Range/Apply/Mask/SeaLevel per template. Commands parsed by `parseCommand()`, processed by `processTerrainCommands()`: Hill/Pit push circular features to queue, Range/Trough push sinusoidal ridgeline + spurs to queue, Apply flushes queue with explicit `shapePower`/`noiseAmp`. Power-law falloff `max(0, 1−t²)^shapePower` (core) + linear skirt (r→2r, 3.5% strength) for cumulative overlapping terrain. Radii 2.5–12.5 km. Per-point noise (±noiseAmp) breaks radial symmetry. Ridgelines use sinusoidal wiggle (`wiggleFreq × wiggleAmp`) and branching prominence spurs (perpendicular segments every ~20 km). Multiple Apply batches per template enable varied terrain layers (e.g., fjord: trough first at low shapePower, then hills at higher shapePower).
-- **Island shape**: Smoothstep multiplicative mask (`1−t²(3−2t)`), with angular perturbation (4-frequency sine waves) for jagged coastlines. Per-template radius, center offset, and perturbation amplitudes control coastline shape. Bay, Fjord, Lake, and Land use a full-coverage mask (radius large enough to never clip), so their coastlines come only from their carved features.
-- **Erosion**: Flux-based hydraulic erosion (downhill → accumulate → `√flux × slope + creep`), 8 iterations with sink-filling
-- **Coast cleaning**: Two-pass removal of isolated land/water cells at boundary
-- **Template features**: After coast cleaning, Bay and Lake get inverted gaussian depressions — lake (central basin), bay (broad blob from random edge). Fjord is carved earlier (before sea-level cut) — a linear Gaussian trench (120–300 km long, 6–16 km wide, depth 0.3–0.6) from a random map edge inward, always reaching below the water cutoff. Land has no carve and heights are clamped to ≥0 for a fully continental terrain.
+- **Base terrain**: `generateSimplexBase()` — FBM with 6 octaves using `simplex-noise` library. 6 independent seeded SimplexNoise instances (one per octave, mulberry32 PRNG). Normals rescaled 0–1, redistributed via `pow(e * 1.2, 2.5)` to create flat valleys. Base frequency 2.0 means ~2 major features across the map.
+- **Feature uplift**: `processTerrainCommands()` runs on top of the simplex base. Hill/Pit push circular features with **linear taper** `1 - d/r` within radius (no skirt, no noise jitter). Range/Trough push sinusoidal ridgelines + spurs with Gaussian cross-section (unchanged from original). Apply flushes queue — no shapePower/noiseAmp parameters (irrelevant for linear taper).
+- **Island shape**: Manhattan distance mask (`(|nx| + |ny|)/2`) with smoothstep multiplicative falloff `1−t²(3−2t)`. Diamond-shaped islands without angular perturbation. Per-template radius: island 0.44, archipelago 0.40, land 5.0 (effectively no clip).
+- **Water level**: Fixed at 0.5. No quantile-based sea level cut, no erosion, no coast cleaning, no template-specific carving (fjord/lake/bay/landclamp removed).
+- **Sink filling**: Kept so rivers flow correctly.
 - **Scale**: Extent configurable 50–400 km (default 320), HEIGHT_SCALE 3.5 km, camera scales with extent
 - **Clouds**: IcosahedronGeometry blobs at Y=80-120, drift slowly eastward
 - **Rivers**: Downhill flow accumulation on the Delaunay graph (`computeRivers()` in `terrain/terrain.js`). Land points start with unit flow, accumulate downhill via sorted height traversal. Points in the top 10% of accumulated flow become river channels. River segments follow downhill edges between river points and are rendered as flat blue quads (width ∝ √flux) at Y = 0.2 (land) / 0.05 (water) via `buildRiverMesh()` in `mesh/mesher.js`, avoiding the flat terrain plane at Y = 0.1 / 0.0.

@@ -19,7 +19,7 @@ Perilous 3D generates a  **50–400 km configurable** map (default 320×320 km) 
 - **Three.js r185** — 3D rendering, `BufferGeometry`, `MeshLambertMaterial`, `OrbitControls`
 - **Delaunator** — Delaunay triangulation (mesh topology for 3D terrain)
 - **lil-gui** — floating control panel for user parameters and actions
-- **Mulberry32 / ChanceJS** — seeded PRNG for deterministic generation
+- **simplex-noise** — seeded simplex noise for base terrain FBM generation
 - **HTML5 import maps** — CDN-based dependency loading
 
 ## Architecture
@@ -31,13 +31,12 @@ index.html
     ├── noise.js     — Perlin + FractalNoise (retained, unused by current pipeline)
     ├── grid.js      — Vec2, hex grid, DCEL (retained, unused by current pipeline)
     ├── raisers.js   — Skeleton/midpoint-displacement raisers (retained, unused)
-    ├── terrain/terrain.js   — full pipeline (queue-based command architecture):
+    ├── terrain/terrain.js   — full pipeline (simplex noise base + feature uplift):
     │                      Terrain state commands (Scale/Rainfall) + template scripts
-    │                      (Hill/Range/Apply/Mask/SeaLevel/Fjord/Lake/Bay/LandClamp)
-    │                      → parseCommand → processTerrainCommands
-    │                      → Delaunay mesh → cartoon mountains → island mask → peaky →
-    │                      hydraulic erosion → fjord/lake/bay/land features → sea-level →
-    │                      sink-fill → coast clean
+    │                      (Hill/Range/Apply) → parseCommand → processTerrainCommands
+    │                      → generateSimplexBase (FBM + redistribution) → feature uplift
+    │                      (linear taper hills, Gaussian ridges) → Manhattan island mask
+    │                      → water level 0.5 → fill sinks
     │                      + habitability scoring + cities/towns placement + resource deposits
     ├── terrain/coast.js     — Chaikin smoothing (retained, unused by current pipeline)
       ├── mesh/mesher.js    — Delaunay triangles → Three.js indexed BufferGeometry
@@ -66,22 +65,18 @@ index.html
 ## Terrain Generation Pipeline
 
 ```
-Seed → ChanceJS PRNG → points scaled by map area (~3000 at 50 km, ~15000 at 320 km)
+Seed → mulberry32 PRNG → points scaled by map area (~3000 at 50 km, ~15000 at 320 km)
      → Delaunator triangulation → adjacency graph
      → Terrain preset (wetland/lowland/woodland/highland/wasteland) + Map template (island/archipelago/bay/fjord/lake/land)
-         → terrain state commands (Scale/Rainfall) + template command script (Hill/Range/Apply/Mask/SeaLevel/Fjord/Lake/Bay/LandClamp)
-         → parseCommand → processTerrainCommands
-             → queue-based mountain/ridge generation: Hill/Pit push circular features, Range/Trough push ridgeline
-               with sinusoidal wiggle + branching spurs, Apply flushes queue with shapePower/noiseAmp
-             → height field
-       → Baseline subtraction (min → 0)
-       → Island mask (smoothstep + angular perturbation, per-template radius/offset)
-       → Normalize [0,1] → sqrt (peaky)
-       → 8× hydraulic erosion (flux + slope → fill sinks)
-       → Fjord/Lake/Bay carve or LandClamp (template-specific, per commands)
-       → Sea-level cut (quantile per template)
-       → Fill sinks → clean coast (remove 1-cell artifacts)
-       → Rivers (downhill flux accumulation) → Moisture (Azgaar BFS + neighbor averaging) × terrain rainfall
+         → terrain state commands (Scale/Rainfall) + template command script (Hill/Range/Apply)
+         → parseCommand
+         → Step 1: generateSimplexBase — simplex-noise FBM (6 octaves, persistence 0.5, lacunarity 2.0, baseFreq 2.0)
+           + redistribution pow(e*1.2, 2.5) → 0–1 height field
+         → Step 2: feature uplift — Hill/Pit with linear taper (1-d/r) within radius, Range/Trough
+           with Gaussian cross-section (wiggle+spurs), no skirt/noise jitter
+         → Step 3: Manhattan island mask (|x|+|y| diamond smoothstep, per-template radius)
+         → Step 4: water level 0.5 (fixed) → fill sinks
+         → Rivers (downhill flux accumulation) → Moisture (Azgaar BFS + neighbor averaging) × terrain rainfall
        → Temperature (latitudinal + elevation lapse) → Biomes (Azgaar 5×26 matrix)
        → Habitability (biome × elevation × slope × water proximity, 0–125)
        → Cities (top habitability sites, ≥32 km apart, coastal-biased)
@@ -101,14 +96,14 @@ Seed → ChanceJS PRNG → points scaled by map area (~3000 at 50 km, ~15000 at 
 
 ### Per-Template Configuration
 
-| Template      | Water quantile | Mountain ranges           | Coastline                                      |
-| ------------- | -------------- | ------------------------- | ---------------------------------------------- |
-| `island`      | 0.40           | 2–4 moderate ranges       | Jagged circular island                         |
-| `archipelago` | 0.55           | 4–6 short narrow ranges   | Small broken islands                           |
-| `bay`         | 0.005          | 1–3 long heavy ranges     | Full land except bay blob from random edge     |
-| `fjord`       | 0.01           | 3–5 very narrow ranges    | Full land except fjord trench from random edge |
-| `lake`        | 0.005          | 2–4 ranges ringing center | Full land except central lake basin            |
-| `land`        | 0.00           | 3–6 big continental belts | Fully continental, no water                    |
+| Template      | Mask radius | Mountain ranges           | Coastline                                      |
+| ------------- | ----------- | ------------------------- | ---------------------------------------------- |
+| `island`      | 0.44        | 2–4 moderate ranges       | Diamond-shaped island                          |
+| `archipelago` | 0.40        | 4–6 short narrow ranges   | Small broken islands (more water)              |
+| `bay`         | 5.0 (none)  | 1–3 long heavy ranges     | Full land (water from sea-level 0.5)           |
+| `fjord`       | 5.0 (none)  | 3–5 very narrow ranges    | Full land (water from sea-level 0.5)           |
+| `lake`        | 5.0 (none)  | 2–4 ranges ringing center | Full land (water from sea-level 0.5)           |
+| `land`        | 5.0 (none)  | 3–6 big continental belts | Fully continental, no clipping                 |
 
 ### Terrain Presets
 
@@ -249,19 +244,13 @@ Outpost, landmark, hazard, obstacle, and area data is stored in `region.outpostS
 
 **Delaunay Triangulation** — [Delaunator](https://github.com/mapbox/delaunator) provides mesh topology from random points (scales with map area: ~3K minimum, ~15–20K at 320 km, ~23–31K at 400 km).
 
-**Cartoon Mountains** — Generated via a **queue-based command architecture** (`TEMPLATE_SCRIPTS` + `TERRAIN_STATE_CMDS` → `parseCommand()` → `processTerrainCommands()`). Hill/Pit commands push circular features to a queue; Range/Trough commands generate ridgelines with sinusoidal wiggle and branching spurs; `Apply shapePower, noiseAmp` flushes the queue, rendering all queued features to the height field via `mountainFalloff()` with power-law `max(0, 1−t²)^shapePower` core + linear skirt (r→2r, 3.5% strength), plus per-point noise jitter (±noiseAmp). Radii vary 2.5–12.5 km. Ridgelines use sinusoidal wiggle (`wiggleFreq × wiggleAmp`) and branching prominence spurs (perpendicular segments every ~20 km). Multiple Apply batches per template enable layered terrain (e.g., broad fjord trough at low shapePower, then sharp hills at higher shapePower).
+**Base Terrain (Simplex Noise)** — `generateSimplexBase()` generates the base height field using 6 octaves of simplex noise (`simplex-noise` library). Each octave uses an independent seeded `SimplexNoise` instance (mulberry32 PRNG). Normals are rescaled 0–1, then redistributed via `pow(e * 1.2, 2.5)` to create flat valleys. Base frequency 2.0 means ~2 major features span the map. Parameters: `octaves=6`, `persistence=0.5`, `lacunarity=2.0`, `exponent=2.5`, `fudge=1.2`.
 
-**Island Mask** — A smoothstep multiplier (`1 − t²(3−2t)`) based on distance from center, with **angular perturbation** (4-frequency sine waves) to create jagged coastlines with bays, headlands, and fjord channels. Per-template configs control base radius, center offset, and perturbation amplitudes. Templates marked "full map" use radius ≥ 1.0× extent so the terrain fills the entire configurable map area.
+**Feature Uplift** — Hills, pits, ridges, and troughs are applied on top of the simplex base via a queue-based command architecture (`TEMPLATE_SCRIPTS` + `TERRAIN_STATE_CMDS` → `parseCommand()` → `processTerrainCommands()`). Hill/Pit commands push circular features with **linear taper** `1 - d/r` within their exact radius — no skirt, no Gaussian falloff, no noise jitter. Range/Trough commands generate ridgelines with sinusoidal wiggle and branching spurs using Gaussian cross-section (unchanged). `Apply` flushes the queue without shapePower/noiseAmp parameters.
 
-**Hydraulic Erosion** — For each vertex: compute downhill direction → collect upstream flux → compute slope → `erosion = √flux × slope + slope²` (capped at 200). 8 iterations with sink-filling between passes to prevent depressions.
+**Island Mask** — Manhattan distance (`(|nx| + |ny|)/2`) with smoothstep multiplier `1 − t²(3−2t)`. Creates diamond-shaped islands without angular perturbation. Per-template mask radius: island=0.44, archipelago=0.40, land=5.0 (effectively no clip).
 
-**Coast Cleaning** — Two-pass removal of single-cell land/water artifacts on the boundary (3-neighbor triangles).
-
-**Template-Specific Features** — Bay, Fjord, Lake, and Land use a full-coverage island mask (no angular clipping), so only their named features create water:
-- **Lake**: Broad gaussian basin near the map center (radius 25–50 km, depth 0.25–0.5) pushed below sea level to form an inland lake.
-- **Fjord**: Carved *before* the sea-level cut so the trench always reaches below the water cutoff. A linear Gaussian trench (len 80–180 km, width 6–16 km, depth 0.3–0.6) starting from a random map edge, creating flooded glacial valleys.
-- **Bay**: Wide gaussian blob (radius 35–65 km, depth 0.2–0.4) placed near a random map edge. Creates a large bay opening.
-- **Land**: No carve; heights are clamped to ≥ 0 (no cells at exactly 0), producing a fully continental terrain without ocean.
+**Water Level** — Fixed at 0.5. No quantile-based sea level cut, no erosion, no coast cleaning, no template-specific carving.
 
 **Rivers** — Downhill flow accumulation on the Delaunay graph (`computeRivers()` in `terrain/terrain.js`). Each land point starts with unit flow, accumulates downstream via sorted height traversal. Points in the top 10% of accumulated flow become river channels. River segments follow downhill edges between river points and are rendered as blue `LineSegments` slightly above the terrain surface, with width proportional to √flux.
 
