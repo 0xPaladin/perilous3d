@@ -33,7 +33,89 @@ const HILL_THRESHOLD = 0.65;
 const HEIGHT_SCALE = 3.5;
 
 export function buildMeshMountains(region) {
-  return new THREE.Group();
+  const { pts, heights, waterLevel, heightMax, mounts, seed, adj, extent } = region;
+  const group = new THREE.Group();
+  group.name = 'meshMountains';
+  if (!mounts || !pts || !heights || !adj) return group;
+
+  const maxLandH = Math.max(heightMax - waterLevel, 0.001);
+  const hw = (extent?.width || 320) / 2;
+  const hh = (extent?.height || 320) / 2;
+  const placed = [];
+
+  for (const m of mounts) {
+    if (m.peakHeight <= 0) continue;
+    if (m.r <= 0) continue;
+
+    const h = findNearestHeight(m.x, m.y, pts, heights);
+    if (h <= waterLevel) continue;
+    const normH = (h - waterLevel) / maxLandH;
+    if (normH <= HILL_THRESHOLD) continue;
+
+    const rng = mulberry32((seed + (m._idx || 0) * 173 + 991) | 0);
+    const tile = generateMountainTile(rng, 0, 0, m.peakHeight);
+    const mesh = createMountainTileMesh(tile, m.peakHeight);
+    mesh.position.set(m.x, 0.0, m.y);
+    mesh.scale.set(m.r / 3.5, m.r * 0.35, m.r / 3.5);
+    const halfSize = m.r + tile.gridSize / 2;
+    if (mesh.position.x + halfSize < -hw || mesh.position.x - halfSize > hw ||
+        mesh.position.z + halfSize < -hh || mesh.position.z - halfSize > hh) continue;
+    group.add(mesh);
+    placed.push({ x: m.x, y: m.y, r: m.r });
+  }
+
+  const extentSize = extent?.width || 320;
+  const areaRatio = (extentSize / 320) ** 2;
+  const maxAuto = Math.max(5, Math.round(25 * areaRatio));
+
+  const candidates = [];
+  for (let i = 0; i < pts.length; i++) {
+    if (heights[i] <= waterLevel) continue;
+    const localH = heights[i] - waterLevel;
+    if (localH <= 0) continue;
+    const normH = localH / maxLandH;
+    if (normH <= HILL_THRESHOLD) continue;
+
+    let isPeak = true;
+    for (const j of adj[i]) {
+      if (heights[j] > heights[i]) { isPeak = false; break; }
+    }
+    if (!isPeak) continue;
+
+    const px = pts[i][0], py = pts[i][1];
+    if (Math.abs(px) > hw || Math.abs(py) > hh) continue;
+
+    candidates.push({ idx: i, normH, x: px, y: py });
+  }
+
+  candidates.sort((a, b) => b.normH - a.normH);
+
+  let autoCount = 0;
+  for (const c of candidates) {
+    if (autoCount >= maxAuto) break;
+
+    let near = false;
+    for (const p of placed) {
+      const dx = c.x - p.x, dz = c.y - p.y;
+      const minD = Math.max(p.r * 1.5, 3);
+      if (dx * dx + dz * dz < minD * minD) { near = true; break; }
+    }
+    if (near) continue;
+
+    const h = heights[c.idx];
+    const peakHeight = h - waterLevel;
+    const r = 3 + (c.normH - HILL_THRESHOLD) * 8;
+    const rng = mulberry32((seed + c.idx * 173 + 991) | 0);
+    const tile = generateMountainTile(rng, 0, 0, peakHeight);
+    const mesh = createMountainTileMesh(tile, peakHeight);
+    mesh.position.set(c.x, 0.0, c.y);
+    mesh.scale.set(r / 3.5, r * 0.35, r / 3.5);
+    group.add(mesh);
+    placed.push({ x: c.x, y: c.y, r });
+    autoCount++;
+  }
+
+  return group;
 }
 
 const FOREST_DENSITY = [0, 0, 0, 0.2, 0.2, 0.7, 0.7, 1.0, 1.0, 0.5, 0.05, 0, 0.4];

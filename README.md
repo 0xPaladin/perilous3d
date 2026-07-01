@@ -31,35 +31,44 @@ index.html
     ├── noise.js     — Perlin + FractalNoise (retained, unused by current pipeline)
     ├── grid.js      — Vec2, hex grid, DCEL (retained, unused by current pipeline)
     ├── raisers.js   — Skeleton/midpoint-displacement raisers (retained, unused)
-    ├── terrain/terrain.js   — full pipeline (simplex noise base + feature uplift):
-    │                      Terrain state commands (Scale/Rainfall) + template scripts
-    │                      (Hill/Range/Apply) → parseCommand → processTerrainCommands
-    │                      → generateSimplexBase (FBM + redistribution) → feature uplift
-    │                      (linear taper hills, Gaussian ridges) → Manhattan island mask
-    │                      → water level 0.5 → fill sinks
-    │                      + habitability scoring + cities/towns placement + resource deposits
-    ├── terrain/coast.js     — Chaikin smoothing (retained, unused by current pipeline)
-      ├── mesh/mesher.js    — Delaunay triangles → Three.js indexed BufferGeometry
-     │                      + per-vertex biome colors (Azgaar 5×26 temperature × moisture matrix)
-     │                      + river mesh (LineSegments along downhill edges, width ∝ √flux)
-     │                      + settlement rendering (cities + towns) + resource markers (gold octahedrons)
-     │                      + ruins (stone pillar clusters) + minor ruins (tall gray obelisks)
-     │                      + trouble markers (inverted red pyramids)
-     │                      + site features: outpost tower, cyan landmark pillar, orange hazard pyramid,
-     │                        amber obstacle/area pillars
+    ├── terrain/
+    │   ├── config.js       — Constants: terrain/cmd maps, biome matrix, habitability, trouble/feature types,
+    │   │                    site tables, magic/elements/faction tables, place-name word lists, etc.
+    │   ├── terrain.js      — full pipeline orchestration (simplex noise base + feature uplift):
+    │   │                    Terrain state commands (Scale/Rainfall) + template scripts
+    │   │                    (Hill/Range/Apply) → parseCommand → processTerrainCommands
+    │   │                    → generateSimplexBase (FBM + redistribution) → feature uplift
+    │   │                    (linear taper hills, Gaussian ridges) → Manhattan island mask
+    │   │                    → water level 0.5 → fill sinks
+    │   │                    + habitability scoring + cities/towns placement + resource deposits
+    │   │                    + feature resolution via resolveFeatures()
+    │   ├── biomes.js        — biome pipeline (extracted from terrain.js):
+    │   │                    buildBiomes() — sink fill → temperature → rivers → moisture → biome matrix
+    │   │                    Helpers: downhill, zero, fillSinks, computeTemperature, biomeFromMatrix,
+    │   │                    computeMoisture, computeRivers
+    │   ├── features.js      — regional feature generator + resolver:
+    │   │                    generateFeatures() — 8+2d8 features per region, rolled 1d12+safety
+    │   │                    resolveFeatures() — resolves features into map objects using helpers
+    │   │                    imported from terrain.js and constants from config.js
+    │   └── coast.js         — Chaikin smoothing (retained, unused by current pipeline)
+    ├── mesh/mesher.js    — Delaunay triangles → Three.js indexed BufferGeometry
+      │                      + per-vertex biome colors (Azgaar 5×26 temperature × moisture matrix)
+      │                      + river mesh (LineSegments along downhill edges, width ∝ √flux)
+      │                      + settlement rendering (cities + towns) + resource markers (gold octahedrons)
+      │                      + ruins (stone pillar clusters) + minor ruins (tall gray obelisks)
+      │                      + trouble markers (inverted red pyramids)
+      │                      + site features: outpost tower, cyan landmark pillar, orange hazard pyramid,
+      │                        amber obstacle/area pillars
     ├── mesh/colors.js    — PS terrain palette (used by mountain & hill tile color palettes)
     ├── renderer.js  — Three.js scene, HemisphereLight + DirectionalLight (shadows),
-     │                      cloud blobs (IcosahedronGeometry at Y=80–120), OrbitControls,
-     │                      render loop with FPS counter
+      │                      cloud blobs (IcosahedronGeometry at Y=80–120), OrbitControls,
+      │                      render loop with FPS counter
     ├── gui/ui.js         — progress overlay, seed display, URL sync
       ├── gui/gui.js         — lil-gui initialization: folders for Template, Parameters, Actions, Info
       ├── gui/items.js       — locations panel (Cities, Towns, Resources, Dungeons, Ruins,
-       │                         Landmarks, Outposts, Hazards, Obstacles, Areas, Trouble)
-       │                         + item list + fly-to camera + zoom out
-      ├── terrain/features.js    — regional feature generator: 8+2d8 features per region, each
-     │                         rolled 1d12+safety → creature/hazard/obstacle/area/named place/
-     │                         site/faction presence/settlement with sub-tables for each type
-     └── main.js          — bootstrap: seed → buildRegion → createScene → animate → initGUI
+        │                         Landmarks, Outposts, Hazards, Obstacles, Areas, Trouble)
+        │                         + item list + fly-to camera + zoom out
+      └── main.js          — bootstrap: seed → buildRegion → createScene → animate → initGUI
 ```
 
 ## Terrain Generation Pipeline
@@ -68,13 +77,13 @@ index.html
 Seed → mulberry32 PRNG → points scaled by map area (~3000 at 50 km, ~15000 at 320 km)
      → Delaunator triangulation → adjacency graph
      → Terrain preset (wetland/lowland/woodland/highland/wasteland) + Map template (island/archipelago/bay/fjord/lake/land)
-         → terrain state commands (Scale/Rainfall) + template command script (Hill/Range/Apply)
+         → terrain state commands (Scale/Rainfall/Radius/Ratio) + template command script (Hill/Pit/Range/Trough/IslandMask/Apply)
          → parseCommand
          → Step 1: generateSimplexBase — simplex-noise FBM (6 octaves, persistence 0.5, lacunarity 2.0, baseFreq 2.0)
            + redistribution pow(e*1.2, 2.5) → 0–1 height field
          → Step 2: feature uplift — Hill/Pit with linear taper (1-d/r) within radius, Range/Trough
            with Gaussian cross-section (wiggle+spurs), no skirt/noise jitter
-         → Step 3: Manhattan island mask (|x|+|y| diamond smoothstep, per-template radius)
+         → Step 3: IslandMask applies Manhattan distance mask (|x|+|y| diamond smoothstep)
          → Step 4: water level 0.5 (fixed) → fill sinks
          → Rivers (downhill flux accumulation) → Moisture (Azgaar BFS + neighbor averaging) × terrain rainfall
        → Temperature (latitudinal + elevation lapse) → Biomes (Azgaar 5×26 matrix)
@@ -226,7 +235,7 @@ Rendered as **inverted red pyramids** (`ConeGeometry` rotated π) in `buildTroub
 - **12 Faction Presence**: 1d10 faction type, 1d8 primary goal, 1d6 condition
 - **13+ Settlement**: placeholder for settlement generation
 
-Site → resource and site → ruin/dungeon features are resolved in `buildRegion()` using `generateResources()` and `findRuins()`/`findMinorRuins()` from `terrain/terrain.js`, placing actual map resources, minor ruins, and great ruins at the generated locations. Named place, site→landmark, site→ruin, and site→dungeon all call `generatePlaceName()` (exported from `terrain/features.js`) to produce names like "The Broken Tower" or "The Doomed Gate".
+Feature resolution is handled by `resolveFeatures()` in `terrain/features.js`, which receives terrain helpers from `terrain/terrain.js` via destructured params. Site/resource, site/ruin, site/dungeon, named place, site/landmark, and site/outpost features are resolved there. Hazard/obstacle/area features find matching terrain cells using `findCellsByTerrain()` and terrain-compatibility filters from `terrain/terrain.js`.
 
 Outpost → `placeSiteFeature()` helper (random land cell ≥15 km from cities/towns, tracked for mutual separation). Landmark → `generatePlaceName()` + `placeSiteFeature()`, stored in `region.landmarkSites[]` with name. Named place → 1d2 roll: ruin (pushed to `region.minorRuins[]`) or landmark (pushed to `region.landmarkSites[]`). Lair/dwelling → pushes a trouble marker with type `'lair'` to `region.trouble[]`.
 
@@ -246,19 +255,34 @@ Outpost, landmark, hazard, obstacle, and area data is stored in `region.outpostS
 
 **Base Terrain (Simplex Noise)** — `generateSimplexBase()` generates the base height field using 6 octaves of simplex noise (`simplex-noise` library). Each octave uses an independent seeded `SimplexNoise` instance (mulberry32 PRNG). Normals are rescaled 0–1, then redistributed via `pow(e * 1.2, 2.5)` to create flat valleys. Base frequency 2.0 means ~2 major features span the map. Parameters: `octaves=6`, `persistence=0.5`, `lacunarity=2.0`, `exponent=2.5`, `fudge=1.2`.
 
-**Feature Uplift** — Hills, pits, ridges, and troughs are applied on top of the simplex base via a queue-based command architecture (`TEMPLATE_SCRIPTS` + `TERRAIN_STATE_CMDS` → `parseCommand()` → `processTerrainCommands()`). Hill/Pit commands push circular features with **linear taper** `1 - d/r` within their exact radius — no skirt, no Gaussian falloff, no noise jitter. Range/Trough commands generate ridgelines with sinusoidal wiggle and branching spurs using Gaussian cross-section (unchanged). `Apply` flushes the queue without shapePower/noiseAmp parameters.
+**Feature Uplift** — Hills, pits, ridges, and troughs are applied on top of the simplex base via a queue-based command architecture (`TEMPLATE_SCRIPTS` + `TERRAIN_STATE_CMDS` → `parseCommand()` → `processTerrainCommands()`). Supported commands:
+
+| Command | Syntax | Effect |
+| ------- | ------ | ------ |
+| `Hill` | `<count>, <height>, <xRange>, <yRange>` | Adds circular hills with linear taper `1 - d/r`. `xRange`/`yRange` are 0–100 placement bounds. |
+| `Pit` | `<count>, <depth>, <xRange>, <yRange>` | Adds circular depressions (negative height). Same placement args as `Hill`. |
+| `Range` | `<height>, <x1>, <y1>, <x2>, <y2>` | Adds a ridgeline from point `(x1,y1)` to `(x2,y2)`. Auto-places peaks every ~6 km along the line (more on larger maps via `Ratio`), plus branching spurs every ~20 km. Gaussian cross-section. |
+| `Trough` | `<depth>, <x1>, <y1>, <x2>, <y2>` | Adds a ridgeline depression from point `(x1,y1)` to `(x2,y2)`. Same auto-spacing behavior as `Range`. |
+| `Apply` | — | Flushes the accumulated feature queue into the height field. Multiple commands can queue before applying. |
+| `Scale` | `<value>` | Sets global height multiplier (`state.scale`). Affects subsequent `Hill`/`Range`/`Trough`/`Pit` behavior. |
+| `Rainfall` | `<value>` | Sets global rainfall multiplier (`state.rainfall`). Propagates to moisture and biome computation. |
+| `Radius` | `<value>` | Sets radius scale multiplier (`state.radiusScale`) for subsequent `Hill`/`Pit`/`Range`/`Trough`. 1.0 = default. |
+| `Ratio` | `<value>` (optional, default `size/300`) | Sets count multiplier (`state.ratio`) for subsequent `Hill`/`Pit`/`Range`/`Trough`. Multiply `count` by `size/300` by default; pass a value to override. |
+| `IslandMask` | `<mix>` (optional, default `0.5`) | Applies Manhattan-distance island shaping (`(|x|+|y|)` diamond + smoothstep). `mix` controls blend between raw height and mask. |
+
+Hills/Pits generate random centers within the bounding box; diameters are `runif(8, 22) × sizeScale × radiusScale`. Ridges/troughs generate a sinusoidal centerline with random wiggle amplitude/frequency, plus branching spurs; peak radii are `runif(3, 6) × sizeScale × radiusScale`. `Apply` flushes the queue. `Scale`/`Rainfall`/`Radius` are state commands that set multipliers applied to all subsequent features until changed again. Per-template scripts found in `TERRAIN_STATE_CMDS` (terrain state pre-commands) and `TEMPLATE_SCRIPTS` (template feature scripts) in `src/terrain/config.js`.
 
 **Island Mask** — Manhattan distance (`(|nx| + |ny|)/2`) with smoothstep multiplier `1 − t²(3−2t)`. Creates diamond-shaped islands without angular perturbation. Per-template mask radius: island=0.44, archipelago=0.40, land=5.0 (effectively no clip).
 
 **Water Level** — Fixed at 0.5. No quantile-based sea level cut, no erosion, no coast cleaning, no template-specific carving.
 
-**Rivers** — Downhill flow accumulation on the Delaunay graph (`computeRivers()` in `terrain/terrain.js`). Each land point starts with unit flow, accumulates downstream via sorted height traversal. Points in the top 10% of accumulated flow become river channels. River segments follow downhill edges between river points and are rendered as blue `LineSegments` slightly above the terrain surface, with width proportional to √flux.
+**Rivers** — Downhill flow accumulation on the Delaunay graph (`computeRivers()` in `terrain/biomes.js`). Each land point starts with unit flow, accumulates downstream via sorted height traversal. Points in the top 10% of accumulated flow become river channels. River segments follow downhill edges between river points and are rendered as blue `LineSegments` slightly above the terrain surface, with width proportional to √flux.
 
-**Moisture** — Azgaar-style two-phase computation (`computeMoisture()` in `terrain/terrain.js`). Phase A: BFS from rivers (10), ocean (8), and coast-adjacent land (7) with exponential decay (0.94× per hop inland). Phase B: neighbor averaging with river flux bonus (`4 + mean(raw + max(flux/10, 2), neighbors)`). Output range ~4–50, stored in `region.moisture`.
+**Moisture** — Azgaar-style two-phase computation (`computeMoisture()` in `terrain/biomes.js`). Phase A: BFS from rivers (10), ocean (8), and coast-adjacent land (7) with exponential decay (0.94× per hop inland). Phase B: neighbor averaging with river flux bonus (`4 + mean(raw + max(flux/10, 2), neighbors)`). Output range ~4–50, stored in `region.moisture`.
 
-**Temperature** — `computeTemperature()` in `terrain/terrain.js`. Base temp parameter (±0.5°C latitudinal gradient across map extent, south hot / north cold) with elevation lapse rate (−10°C max). Mapped to Azgaar's 26-band scale: `tempBand = round(clamp(20 − t, 0, 25))`. Stored in `region.temperature` and `region.tempBand`.
+**Temperature** — `computeTemperature()` in `terrain/biomes.js`. Base temp parameter (±0.5°C latitudinal gradient across map extent, south hot / north cold) with elevation lapse rate (−10°C max). Mapped to Azgaar's 26-band scale: `tempBand = round(clamp(20 − t, 0, 25))`. Stored in `region.temperature` and `region.tempBand`.
 
-**Biomes** — `biomeId()` in `terrain/terrain.js` uses Azgaar's exact 5×26 biome matrix (5 moisture bands × 26 temperature bands). Overrides: normH < 0 → Marine (0), normH > 0.80 → Glacier (11). Produces 13 biomes: Marine, Hot desert, Cold desert, Savanna, Grassland, Tropical seasonal forest, Temperate deciduous forest, Tropical rainforest, Temperate rainforest, Taiga, Tundra, Glacier, Wetland. Colors looked up via `BIOME_COLORS[13]` array in `mesh/mesher.js`.
+**Biomes** — `biomeFromMatrix()` in `terrain/biomes.js` uses Azgaar's exact 5×26 biome matrix (5 moisture bands × 26 temperature bands). Overrides: normH < 0 → Marine (0), normH > 0.80 → Glacier (11). Produces 13 biomes: Marine, Hot desert, Cold desert, Savanna, Grassland, Tropical seasonal forest, Temperate deciduous forest, Tropical rainforest, Temperate rainforest, Taiga, Tundra, Glacier, Wetland. Colors looked up via `BIOME_COLORS[13]` array in `mesh/mesher.js`.
 
 **Forests** — `buildMeshForests()` in `mesh/mesh_features.js` filters terrain vertices by normalized elevation (0.06–0.55), then applies a biome-index density lookup (`FOREST_DENSITY` array) with a 0.5 survival multiplier. Candidate points are clustered using a centroid-growing algorithm (8 km radius, min 5 per cluster). Each cluster centroid receives an InstancedMesh forest group via `generateForest()` from `mesh/mesh_tree.js`, which varies tree appearance by dominant biome (Taiga: tall trunk, narrow conical canopy, dark green; Rainforest: tall, large round canopy, deep green; Savanna: short trunk, wide flat canopy, yellow-green; Deciduous: medium, round, includes autumn hues).
 

@@ -9,6 +9,7 @@ import { createScene, animate } from './renderer.js';
 import { progressPanel, updateSeedDisplay } from './gui/ui.js';
 import { initGUI } from './gui/gui.js';
 import { initItemsPanel } from './gui/items.js';
+import { TEMPLATE_WATER_LEVELS } from './terrain/config.js';
 
 const app = { sceneState: null, seed: null, seedStr: null };
 
@@ -31,6 +32,8 @@ function tempToClimate(temp) {
   if (temp <= 30) return 'Sub-tropical';
   return 'Tropical';
 }
+
+let waterLevelController = null;
 
 function generate(template, seedStr, terrain, climate, safety, size, waterLevel = 0.5) {
   app.seedStr = seedStr;
@@ -139,11 +142,13 @@ if (!initialClimate) {
 }
 const initialSafety = urlParams.get('safety') ? parseInt(urlParams.get('safety'), 10) : 0;
 const initialSize = urlParams.get('size') ? parseInt(urlParams.get('size'), 10) : 320;
-const initialWaterLevel = urlParams.get('waterLevel') != null ? parseFloat(urlParams.get('waterLevel')) : 0.5;
+const urlWaterLevel = urlParams.get('waterLevel') != null ? parseFloat(urlParams.get('waterLevel')) : null;
+const templateDefaultWl = TEMPLATE_WATER_LEVELS[initialTemplate] || null;
+const effectiveInitialWaterLevel = urlWaterLevel != null ? urlWaterLevel : (templateDefaultWl != null ? templateDefaultWl : 0.5);
 const initialSeed = urlParams.get('seed') || (Math.random().toString(36).substring(2, 10) + Date.now().toString(36));
 
 // Init GUI
-initGUI({
+const { gui, options, waterLevelController: wlc } = initGUI({
   app,
   generate,
   initialTemplate,
@@ -151,7 +156,8 @@ initGUI({
   initialClimate,
   initialSafety,
   initialSize,
-  initialWaterLevel,
+  initialWaterLevel: effectiveInitialWaterLevel,
 });
+waterLevelController = wlc;
 
-generate(initialTemplate, initialSeed, initialTerrain, initialClimate, initialSafety, initialSize, initialWaterLevel);
+generate(initialTemplate, initialSeed, initialTerrain, initialClimate, initialSafety, initialSize, effectiveInitialWaterLevel);

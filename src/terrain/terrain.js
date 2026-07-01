@@ -20,6 +20,8 @@ function runif(lo, hi, rng) { return lo + rng() * (hi - lo); }
 
 function pick(arr, rng) { return arr[Math.floor(rng() * arr.length)]; }
 
+const lerp = (start, end, t) => start + (end - start) * t;
+
 function rnormFactory(rng) {
   let z2 = null;
   return function () {
@@ -73,9 +75,7 @@ function parseCommand(str) {
   const type = parts[0].toLowerCase();
   switch (type) {
     case 'hill':
-    case 'pit':
-    case 'range':
-    case 'trough': {
+    case 'pit': {
       const rest = str.slice(parts[0].length).trim();
       const vals = rest.split(',').map(s => s.trim());
       const count = parseInt(vals[0], 10);
@@ -85,9 +85,24 @@ function parseCommand(str) {
       return {
         type,
         count,
-        [type === 'hill' || type === 'range' ? 'height' : 'depth']: heightOrDepth,
+        [type === 'hill' ? 'height' : 'depth']: heightOrDepth,
         xMin: xRange[0], xMax: xRange[1],
         yMin: yRange[0], yMax: yRange[1],
+      };
+    }
+    case 'range':
+    case 'trough': {
+      const rest = str.slice(parts[0].length).trim();
+      const vals = rest.split(',').map(s => s.trim());
+      const heightOrDepth = parseFloat(vals[0]);
+      const x1 = parseInt(vals[1], 10) / 100;
+      const y1 = parseInt(vals[2], 10) / 100;
+      const x2 = parseInt(vals[3], 10) / 100;
+      const y2 = parseInt(vals[4], 10) / 100;
+      return {
+        type,
+        [type === 'range' ? 'height' : 'depth']: heightOrDepth,
+        x1, y1, x2, y2,
       };
     }
     case 'apply':
@@ -96,13 +111,23 @@ function parseCommand(str) {
       return { type: 'scale', value: parseFloat(parts[1]) };
     case 'rainfall':
       return { type: 'rainfall', value: parseFloat(parts[1]) };
+    case 'radius':
+      return { type: 'radius', value: parseFloat(parts[1]) };
+    case 'ratio': {
+      const val = parts.length > 1 ? parseFloat(parts[1]) : 1;
+      return { type: 'ratio', value: val };
+    }
+    case 'islandmask': {
+      const mix = parts.length > 1 ? parseFloat(parts[1]) : 0.5;
+      return { type: 'islandmask', mix };
+    }
     default:
       console.warn('Unknown command:', type);
       return null;
   }
 }
 
-function generateHillFeatures(extent, rng, count, height, xMin, xMax, yMin, yMax, isPit) {
+function generateHillFeatures(extent, rng, count, height, xMin, xMax, yMin, yMax, isPit, state) {
   const sizeScale = extent.width / 320;
   const halfW = extent.width / 2, halfH = extent.height / 2;
   const xLo = -halfW + xMin * extent.width, xHi = -halfW + xMax * extent.width;
@@ -110,23 +135,24 @@ function generateHillFeatures(extent, rng, count, height, xMin, xMax, yMin, yMax
   const mounts = [];
   for (let i = 0; i < count; i++) {
     const mx = runif(xLo, xHi, rng), my = runif(yLo, yHi, rng);
-    const diameter = runif(8, 22, rng) * sizeScale;
+    const diameter = runif(8, 22, rng) * sizeScale * state.radiusScale;
     mounts.push({ x: mx, y: my, r: diameter / 2, peakHeight: height });
   }
   return mounts;
 }
 
-function generateRidgeFeature(pts, extent, rng, count, height, xMin, xMax, yMin, yMax, isTrough) {
+function generateRidgeFeature(pts, extent, rng, height, x1, y1, x2, y2, isTrough, state) {
   const sizeScale = extent.width / 320;
   const halfW = extent.width / 2, halfH = extent.height / 2;
-  const xLo = -halfW + xMin * extent.width, xHi = -halfW + xMax * extent.width;
-  const yLo = -halfH + yMin * extent.height, yHi = -halfH + yMax * extent.height;
-  const cx = runif(xLo, xHi, rng), cy = runif(yLo, yHi, rng);
-  const angle = runif(0, Math.PI * 2, rng);
-  const ridgeLen = runif(0.5, 0.85, rng) * extent.width;
+  const sx = -halfW + x1 * extent.width, sy = -halfH + y1 * extent.height;
+  const ex = -halfW + x2 * extent.width, ey = -halfH + y2 * extent.height;
+  const dx = ex - sx, dy = ey - sy;
+  const ridgeLen = Math.sqrt(dx * dx + dy * dy);
+  const angle = Math.atan2(dy, dx);
   const cosA = Math.cos(angle), sinA = Math.sin(angle);
+  const cx = (sx + ex) / 2, cy = (sy + ey) / 2;
   const ridgeH = height;
-  const ridgeWidth = Math.abs(height) * 4 * sizeScale;
+  const ridgeWidth = Math.abs(height) * 4 * sizeScale * state.radiusScale;
   const wiggleAmp = ridgeWidth * runif(0.5, 1.0, rng);
   const wiggleFreq = runif(1.5, 3.5, rng);
   const wigglePhase = rng() * Math.PI * 2;
@@ -141,7 +167,7 @@ function generateRidgeFeature(pts, extent, rng, count, height, xMin, xMax, yMin,
     const mx = cx + alongOffset * cosA - (wiggle + perpJitter) * sinA;
     const my = cy + alongOffset * sinA + (wiggle + perpJitter) * cosA;
     const alongFactor = 1 - 0.6 * (2 * Math.abs(t - 0.5));
-    const peakR = runif(3, 6, rng) * sizeScale;
+    const peakR = runif(3, 6, rng) * sizeScale * state.radiusScale;
     peakMounts.push({ x: mx, y: my, r: peakR, peakHeight: height * alongFactor });
   }
   const spurInterval = 20;
@@ -167,7 +193,7 @@ function generateRidgeFeature(pts, extent, rng, count, height, xMin, xMax, yMin,
     const midT = 0.5;
     const mdx = Math.cos(spurAngle) * spurLen * midT;
     const mdy = Math.sin(spurAngle) * spurLen * midT;
-    const spR = runif(2, 5, rng) * sizeScale;
+    const spR = runif(2, 5, rng) * sizeScale * state.radiusScale;
     const spH = spurH * 0.6;
     peakMounts.push({ x: spurCx + mdx * 0.6, y: spurCy + mdy * 0.6, r: spR, peakHeight: spH });
     peakMounts.push({ x: spurCx + mdx, y: spurCy + mdy, r: spR * 0.7, peakHeight: spH * 0.8 });
@@ -233,10 +259,16 @@ function processTerrainCommands(commands, pts, extent, rng, state, baseHeights) 
       case 'rainfall':
         state.rainfall = cmd.value;
         break;
+      case 'radius':
+        state.radiusScale = cmd.value;
+        break;
+      case 'ratio':
+        state.ratio = cmd.value;
+        break;
       case 'hill':
       case 'pit': {
         const isPit = cmd.type === 'pit';
-        const mounts = generateHillFeatures(extent, rng, cmd.count, isPit ? -cmd.depth : cmd.height, cmd.xMin, cmd.xMax, cmd.yMin, cmd.yMax, isPit);
+        const mounts = generateHillFeatures(extent, rng, Math.round(cmd.count * state.ratio), isPit ? -cmd.depth : cmd.height, cmd.xMin, cmd.xMax, cmd.yMin, cmd.yMax, isPit, state);
         for (const m of mounts) {
           m._idx = mountGlobalIdx++;
           queue.mounts.push(m);
@@ -246,7 +278,7 @@ function processTerrainCommands(commands, pts, extent, rng, state, baseHeights) 
       case 'range':
       case 'trough': {
         const isTrough = cmd.type === 'trough';
-        const feature = generateRidgeFeature(pts, extent, rng, cmd.count, isTrough ? -cmd.depth : cmd.height, cmd.xMin, cmd.xMax, cmd.yMin, cmd.yMax, isTrough);
+        const feature = generateRidgeFeature(pts, extent, rng, isTrough ? -cmd.depth : cmd.height, cmd.x1, cmd.y1, cmd.x2, cmd.y2, isTrough, state);
         queue.ridgeData = feature.ridgeData;
         queue.spurData = feature.spurData;
         for (const m of feature.peakMounts) {
@@ -261,6 +293,18 @@ function processTerrainCommands(commands, pts, extent, rng, state, baseHeights) 
         queue.ridgeData = null;
         queue.spurData = [];
         break;
+      case 'islandmask': {
+        const maskMix = cmd.mix;
+        const hw = extent.width / 2;
+        const hh = extent.height ? extent.height / 2 : hw;
+        for (let i = 0; i < pts.length; i++) {
+          const nx = pts[i][0] / hw;
+          const ny = pts[i][1] / hh;
+          const d = Math.min(1, Math.abs(nx) + Math.abs(ny));
+          h[i] = lerp(h[i], 1 - d, maskMix);
+        }
+        break;
+      }
     }
   }
   if (queue.mounts.length > 0 || queue.ridgeData) {
@@ -627,8 +671,8 @@ export function buildRegion(template, cols, rows, seed, terrain, baseTemp = 22, 
   const rawCommands = [...terrainPrepend, ...templateScript];
   const commands = rawCommands.map(parseCommand).filter(Boolean);
 
-  // State passed to processTerrainCommands (scale/rainfall set by commands)
-  const state = { scale: 1.0, rainfall: 1.0 };
+  // State passed to processTerrainCommands (scale/rainfall/radius/ratio set by commands)
+  const state = { scale: 1.0, rainfall: 1.0, radiusScale: 1.0, ratio: 1.0 };
 
   // Step 1: Generate base terrain from simplex noise FBM + redistribution
   let h = generateSimplexBase(pts, extent, seed);
@@ -636,17 +680,6 @@ export function buildRegion(template, cols, rows, seed, terrain, baseTemp = 22, 
   // Step 2: Apply feature commands (hills, ridges, pits) as uplift on base
   const terrainResult = processTerrainCommands(commands, pts, extent, rng, state, h);
   h = terrainResult.heights;
-
-  // Step 3: Manhattan distance island mask
-  const mix = 0.5;
-  const hw = extent.width / 2;
-  const hh = extent.height ? extent.height / 2 : hw;
-  for (let i = 0; i < pts.length; i++) {
-    const nx = pts[i][0] / hw;
-    const ny = pts[i][1] / hh;
-    const d = Math.min(1, Math.abs(nx) + Math.abs(ny));
-    h[i] = h[i] * (1 - mix) + (1 - d) * mix;
-  }
 
   //biomes
   const biomesResult = buildBiomes(h, { adj, pts, extent, waterLevel, baseTemp, npts, state });

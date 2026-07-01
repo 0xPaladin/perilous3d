@@ -1,4 +1,5 @@
 import GUI from 'lil-gui';
+import { TEMPLATE_WATER_LEVELS } from '../terrain/config.js';
 
 export function initGUI({ app, generate, initialTemplate, initialTerrain, initialClimate, initialSafety, initialSize, initialWaterLevel = 0.5 }) {
   const gui = new GUI({ title: 'Perilous Shores' });
@@ -23,15 +24,22 @@ export function initGUI({ app, generate, initialTemplate, initialTerrain, initia
   infoFolder.add(seedProxy, 'value').name('Seed').listen();
 
   const templateFolder = gui.addFolder('Template');
+  let waterLevelController;
   templateFolder.add(options, 'template', ['island', 'archipelago', 'bay', 'fjord', 'lake', 'land'])
-    .name('Template');
+    .name('Template').onFinishChange(() => {
+      const wl = TEMPLATE_WATER_LEVELS[options.template];
+      if (wl != null) {
+        options.waterLevel = wl;
+        if (waterLevelController) waterLevelController.updateDisplay();
+      }
+    });
 
   const paramsFolder = gui.addFolder('Parameters');
   paramsFolder.add(options, 'terrain', ['wetland', 'lowland', 'woodland', 'highland', 'wasteland']).name('Terrain');
   paramsFolder.add(options, 'climate', ['Arctic', 'Sub-arctic', 'Temperate', 'Sub-tropical', 'Tropical']).name('Climate');
   paramsFolder.add(options, 'safety', { Perilous: 0, Dangerous: 1, Unsafe: 2, Safe: 3 }).name('Safety');
   paramsFolder.add(options, 'size', 50, 400, 10).name('Map Size (km)');
-  paramsFolder.add(options, 'waterLevel', 0, 0.95, 0.01).name('Water Level')
+  waterLevelController = paramsFolder.add(options, 'waterLevel', 0, 0.95, 0.01).name('Water Level')
     .onChange(() => {
       if (!app.seedStr) return;
       generate(options.template, app.seedStr, options.terrain, options.climate, options.safety, options.size, options.waterLevel);
@@ -52,5 +60,5 @@ export function initGUI({ app, generate, initialTemplate, initialTerrain, initia
     }
   }, 'fn').name('Update');
 
-  return { gui, options };
+  return { gui, options, waterLevelController };
 }
