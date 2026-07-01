@@ -28,16 +28,16 @@ export const TEMPLATE_SCRIPTS = {
   ],
   bay: [
     'Radius 10',
-    'Pit 1, 2, 80-100, 20-40',
-    'Pit 1, 2, 90-100, 40-60',
-    'Pit 1, 2, 80-100, 60-80',
+    'Pit 1, 2, 20-40, 80-100',
+    'Pit 1, 2, 40-60, 90-100',
+    'Pit 1, 2, 60-80, 80-100',
     'Apply',
     'Radius 1',
     'Ratio',
     'Pit 10, 1, 80-100, 20-80',
   ],
   fjord: [
-    'Radius 3',
+    'Radius 2',
     'Trough 3, 50, 100, 50, 50',
     'Apply',
     'Radius 1',
@@ -59,6 +59,8 @@ export const TEMPLATE_SCRIPTS = {
     'Apply',
   ],
 };
+
+export const HIGHLANDS_RIDGE = 'Range 1, 0, 20, 100, 40';
 
 export const TEMPLATE_WATER_LEVELS = {
   island: 0.25,

@@ -66,10 +66,14 @@ export function createScene(canvas, region) {
   });
 
   // ---- Mesh feature objects (mountains, forests from meshDev) ----
+
+
    import('./mesh/mesh_features.js').then(({ buildMeshMountains, buildMeshForests }) => {
-const mountainGroup = buildMeshMountains(region);
+/*
+    const mountainGroup = buildMeshMountains(region);
 mountainGroup.name = 'meshMountains';
 scene.add(mountainGroup);
+*/
 
 const forestGroup = buildMeshForests(region);
 forestGroup.name = 'meshForests';

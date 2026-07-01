@@ -3,7 +3,7 @@ import { createNoise2D } from 'simplex-noise';
 import { generatePlaceName, resolveFeatures } from './features.js';
 
 //import constants from config
-import {TERRAIN_STATE_CMDS, TEMPLATE_SCRIPTS, TROUBLE_TYPES} from "./config.js";
+import {HIGHLANDS_RIDGE, TERRAIN_STATE_CMDS, TEMPLATE_SCRIPTS, TROUBLE_TYPES} from "./config.js";
 import { buildBiomes, computeHabitability, downhill, zero } from './biomes.js';
 
 export function createRng(seed) {
@@ -697,6 +697,13 @@ export function buildRegion(template, cols, rows, seed, terrain, baseTemp = 22, 
   const terrainPrepend = (TERRAIN_STATE_CMDS[terrain] || TERRAIN_STATE_CMDS.highland);
   const templateScript = (TEMPLATE_SCRIPTS[template] || TEMPLATE_SCRIPTS.island);
   const rawCommands = [...terrainPrepend, ...templateScript];
+
+  //if highlands push ridge to start
+  if(terrain === "highland") {
+    rawCommands.unshift(HIGHLANDS_RIDGE,'Apply');
+  }
+
+  //run commands
   const commands = rawCommands.map(parseCommand).filter(Boolean);
 
   // State passed to processTerrainCommands (scale/rainfall/radius/ratio set by commands)

@@ -62,7 +62,7 @@ export function buildMeshMountains(region) {
     const mesh = createMountainTileMesh(tile, m.peakHeight);
     mesh.material.clippingPlanes = clipPlanes;
     mesh.position.set(m.x, -0.05, m.y);
-    mesh.scale.set(m.r / 3.5, m.peakHeight * 20, m.r / 3.5);
+    mesh.scale.set(m.r / 3.5, m.peakHeight*3, m.r / 3.5);
     group.add(mesh);
   }
 
