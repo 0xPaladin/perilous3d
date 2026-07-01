@@ -202,7 +202,7 @@ function generateRidgeFeature(pts, extent, rng, height, x1, y1, x2, y2, isTrough
   return { ridgeData, spurData, peakMounts };
 }
 
-function applyQueue(h, pts, queue, state, displayMounts) {
+function applyQueue(h, pts, queue, state) {
   const scale = state.scale;
   for (const m of queue.mounts) {
     if (m.r <= 0) continue;
@@ -213,7 +213,6 @@ function applyQueue(h, pts, queue, state, displayMounts) {
         h[i] += m.peakHeight * scale * (1 - d / m.r);
       }
     }
-    displayMounts.push({ x: m.x, y: m.y, r: m.r, peakHeight: m.peakHeight * scale });
   }
   const rd = queue.ridgeData;
   if (rd) {
@@ -248,9 +247,7 @@ function applyQueue(h, pts, queue, state, displayMounts) {
 
 function processTerrainCommands(commands, pts, extent, rng, state, baseHeights) {
   const h = new Float64Array(baseHeights);
-  const displayMounts = [];
   const queue = { mounts: [], ridgeData: null, spurData: [] };
-  let mountGlobalIdx = 0;
   for (const cmd of commands) {
     switch (cmd.type) {
       case 'scale':
@@ -270,7 +267,6 @@ function processTerrainCommands(commands, pts, extent, rng, state, baseHeights) 
         const isPit = cmd.type === 'pit';
         const mounts = generateHillFeatures(extent, rng, Math.round(cmd.count * state.ratio), isPit ? -cmd.depth : cmd.height, cmd.xMin, cmd.xMax, cmd.yMin, cmd.yMax, isPit, state);
         for (const m of mounts) {
-          m._idx = mountGlobalIdx++;
           queue.mounts.push(m);
         }
         break;
@@ -282,13 +278,12 @@ function processTerrainCommands(commands, pts, extent, rng, state, baseHeights) 
         queue.ridgeData = feature.ridgeData;
         queue.spurData = feature.spurData;
         for (const m of feature.peakMounts) {
-          m._idx = mountGlobalIdx++;
           queue.mounts.push(m);
         }
         break;
       }
       case 'apply':
-        applyQueue(h, pts, queue, state, displayMounts);
+        applyQueue(h, pts, queue, state);
         queue.mounts = [];
         queue.ridgeData = null;
         queue.spurData = [];
@@ -308,13 +303,10 @@ function processTerrainCommands(commands, pts, extent, rng, state, baseHeights) 
     }
   }
   if (queue.mounts.length > 0 || queue.ridgeData) {
-    applyQueue(h, pts, queue, state, displayMounts);
+    applyQueue(h, pts, queue, state);
   }
-  const areaRatio = (extent.width / 320) ** 2;
-  const visibleCount = Math.max(5, Math.round(25 * areaRatio));
-  const sorted = [...displayMounts].sort((a, b) => b.peakHeight - a.peakHeight);
-  const filteredMounts = sorted.slice(0, Math.min(visibleCount, sorted.length));
-  return { heights: h, mounts: filteredMounts };
+
+  return { heights: h };
 }
 
 function generateSimplexBase(pts, extent, seed) {
@@ -652,6 +644,40 @@ export function findNeighborCells(idx, adj, pts, maxDistKm) {
 }
 
 
+export function findMountainPeaks(pts, heights, waterLevel, heightMax, adj, extent) {
+  const HILL_THRESHOLD = 0.65;
+  const maxLandH = Math.max(heightMax - waterLevel, 0.001);
+  const halfW = extent.width / 2;
+  const halfH = extent.height / 2;
+  const candidates = [];
+  for (let i = 0; i < pts.length; i++) {
+    if (heights[i] <= waterLevel) continue;
+    const localH = heights[i] - waterLevel;
+    if (localH <= 0) continue;
+    const normH = localH / maxLandH;
+    if (normH <= HILL_THRESHOLD) continue;
+    let isPeak = true;
+    for (const j of adj[i]) {
+      if (heights[j] > heights[i]) { isPeak = false; break; }
+    }
+    if (!isPeak) continue;
+    const px = pts[i][0], py = pts[i][1];
+    if (Math.abs(px) > halfW || Math.abs(py) > halfH) continue;
+    candidates.push({ idx: i, normH, x: px, y: py });
+  }
+  candidates.sort((a, b) => b.normH - a.normH);
+  const areaRatio = (extent.width / 320) ** 2;
+  const maxMounts = Math.max(5, Math.round(25 * areaRatio));
+  const mounts = [];
+  for (let i = 0; i < Math.min(maxMounts, candidates.length); i++) {
+    const c = candidates[i];
+    const peakHeight = heights[c.idx] - waterLevel;
+    const r = 3 + (c.normH - HILL_THRESHOLD) * 8;
+    mounts.push({ x: c.x, y: c.y, r, peakHeight, _idx: c.idx });
+  }
+  return mounts;
+}
+
 export function buildRegion(template, cols, rows, seed, terrain, baseTemp = 22, cityCount = 0, extentSize = 320, waterLevel = 0.5) {
   const rng = createRng(seed);
   const extent = { width: extentSize, height: extentSize };
@@ -678,8 +704,7 @@ export function buildRegion(template, cols, rows, seed, terrain, baseTemp = 22, 
   let h = generateSimplexBase(pts, extent, seed);
 
   // Step 2: Apply feature commands (hills, ridges, pits) as uplift on base
-  const terrainResult = processTerrainCommands(commands, pts, extent, rng, state, h);
-  h = terrainResult.heights;
+  h = processTerrainCommands(commands, pts, extent, rng, state, h).heights;
 
   //biomes
   const biomesResult = buildBiomes(h, { adj, pts, extent, waterLevel, baseTemp, npts, state });
@@ -688,6 +713,9 @@ export function buildRegion(template, cols, rows, seed, terrain, baseTemp = 22, 
 
   //habitability
   const { habitability, nearWater } = computeHabitability(pts, h, waterLevel, biome, adj, rivers.flux, maxLandH);
+
+  //find mountain peaks from height field
+  const mounts = findMountainPeaks(pts, h, waterLevel, heightMax, adj, extent);
 
   const {
     resources,
@@ -733,8 +761,8 @@ export function buildRegion(template, cols, rows, seed, terrain, baseTemp = 22, 
     waterLevel,
     template,
     seed,
-    mountainCount: terrainResult.mounts.length,
-    mounts: terrainResult.mounts,
+    mountainCount: mounts.length,
+    mounts,
     temperature,
     tempBand,
     moisture,

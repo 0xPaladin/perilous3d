@@ -84,6 +84,8 @@ function generate(template, seedStr, terrain, climate, safety, size, waterLevel 
   url.searchParams.set('size', size);
   url.searchParams.set('waterLevel', waterLevel);
   history.replaceState({}, '', url);
+
+  logRegionStats(region,url.searchParams.toString());
 }
 
 const BIOME_NAMES = [
@@ -92,7 +94,7 @@ const BIOME_NAMES = [
   'Temperate rainforest', 'Taiga', 'Tundra', 'Glacier', 'Wetland'
 ];
 
-function logRegionStats(region) {
+function logRegionStats(region, params) {
   const biomeCounts = new Array(13).fill(0);
   if (region.biome) {
     for (let i = 0; i < region.biome.length; i++) {
@@ -101,6 +103,7 @@ function logRegionStats(region) {
     }
   }
   console.log('=== Region Stats ===');
+  console.log('Parameters: ', params);
   console.log('Biomes:', biomeCounts.map((c, i) => `${BIOME_NAMES[i]}: ${c}`).join(' | '));
   console.log('Mountains:', (region.mounts || []).map((m, i) => ({ idx: i, x: m.x, y: m.y, h: m.peakHeight })));
   console.log('Cities:', region.cities || []);

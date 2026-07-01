@@ -45,7 +45,7 @@ export function createScene(canvas, region) {
   scene.add(sun);
 
   // ---- Terrain mesh ----
-  const state = { scene, camera, renderer, controls, extentScale: s };
+  const state = { scene, camera, renderer, controls, extentScale: s, region };
 
     import('./mesh/mesher.js').then(({ buildTerrainMesh, buildRiverMesh, buildTrees, buildSettlements, buildResources, buildTrouble, buildSiteFeatures }) => {
     const terrainMesh = buildTerrainMesh(region);
@@ -110,6 +110,46 @@ scene.add(forestGroup);
     cloudGroup.add(cloud);
   }
   scene.add(cloudGroup);
+
+  const BIOME_NAMES = [
+    'Marine', 'Hot desert', 'Cold desert', 'Savanna', 'Grassland',
+    'Tropical seasonal forest', 'Temperate deciduous forest', 'Tropical rainforest',
+    'Temperate rainforest', 'Taiga', 'Tundra', 'Glacier', 'Wetland'
+  ];
+  const raycaster = new THREE.Raycaster();
+  const pointer = new THREE.Vector2();
+  let pointerDownPos = new THREE.Vector2();
+
+  renderer.domElement.addEventListener('pointerdown', (e) => {
+    pointerDownPos.set(e.clientX, e.clientY);
+  });
+
+  renderer.domElement.addEventListener('pointerup', (e) => {
+    if (pointerDownPos.distanceTo(new THREE.Vector2(e.clientX, e.clientY)) > 3) return;
+    pointer.x = (e.clientX / window.innerWidth) * 2 - 1;
+    pointer.y = -(e.clientY / window.innerHeight) * 2 + 1;
+    raycaster.setFromCamera(pointer, camera);
+    const terrain = state.terrain;
+    if (!terrain) return;
+    const intersects = raycaster.intersectObject(terrain, false);
+    const tooltip = document.getElementById('cell-info-tooltip');
+    if (intersects.length === 0) {
+      if (tooltip) tooltip.style.display = 'none';
+      return;
+    }
+    const hit = intersects[0];
+    const idx = hit.face.a;
+    const height = region.heights[idx];
+    const moisture = region.moisture[idx];
+    const biome = region.biome[idx];
+    const biomeName = BIOME_NAMES[biome] || 'Unknown';
+    if (tooltip) {
+      tooltip.textContent = `idx: ${idx} | height: ${height.toFixed(4)} | moisture: ${moisture.toFixed(1)} | biome: ${biome} (${biomeName})`;
+      tooltip.style.display = 'block';
+      tooltip.style.left = (e.clientX + 14) + 'px';
+      tooltip.style.top = (e.clientY - 24) + 'px';
+    }
+  });
 
   window.addEventListener('resize', () => {
     const w = canvas.clientWidth;

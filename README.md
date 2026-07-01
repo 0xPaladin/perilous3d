@@ -41,6 +41,7 @@ index.html
     │   │                    (linear taper hills, Gaussian ridges) → Manhattan island mask
     │   │                    → water level 0.5 → fill sinks
     │   │                    + habitability scoring + cities/towns placement + resource deposits
+    │   │                    + mountain peak discovery via findMountainPeaks()
     │   │                    + feature resolution via resolveFeatures()
     │   ├── biomes.js        — biome pipeline (extracted from terrain.js):
     │   │                    buildBiomes() — sink fill → temperature → rivers → moisture → biome matrix
@@ -87,8 +88,9 @@ Seed → mulberry32 PRNG → points scaled by map area (~3000 at 50 km, ~15000 a
          → Step 4: water level 0.5 (fixed) → fill sinks
          → Rivers (downhill flux accumulation) → Moisture (Azgaar BFS + neighbor averaging) × terrain rainfall
        → Temperature (latitudinal + elevation lapse) → Biomes (Azgaar 5×26 matrix)
-       → Habitability (biome × elevation × slope × water proximity, 0–125)
-       → Cities (top habitability sites, ≥32 km apart, coastal-biased)
+        → Habitability (biome × elevation × slope × water proximity, 0–125)
+        → Mountain Peaks (findMountainPeaks: scan height field for local maxima above HILL_THRESHOLD, top N by prominence)
+        → Cities (top habitability sites, ≥32 km apart, coastal-biased)
        → Towns (3 per city ≤30 km radius or 4 standalone, ≥25 km apart, coastal-biased)
         → Resources (Max(#cities,2) biome-weighted deposits, one type per deposit)
         → Great Ruins (1–2 abandoned city sites near settlements, ≥30 km apart)
@@ -271,6 +273,8 @@ Outpost, landmark, hazard, obstacle, and area data is stored in `region.outpostS
 | `IslandMask` | `<mix>` (optional, default `0.5`) | Applies Manhattan-distance island shaping (`(|x|+|y|)` diamond + smoothstep). `mix` controls blend between raw height and mask. |
 
 Hills/Pits generate random centers within the bounding box; diameters are `runif(8, 22) × sizeScale × radiusScale`. Ridges/troughs generate a sinusoidal centerline with random wiggle amplitude/frequency, plus branching spurs; peak radii are `runif(3, 6) × sizeScale × radiusScale`. `Apply` flushes the queue. `Scale`/`Rainfall`/`Radius` are state commands that set multipliers applied to all subsequent features until changed again. Per-template scripts found in `TERRAIN_STATE_CMDS` (terrain state pre-commands) and `TEMPLATE_SCRIPTS` (template feature scripts) in `src/terrain/config.js`.
+
+**Mountain Peak Discovery** — `findMountainPeaks()` in `terrain/terrain.js` scans the final height field for local maxima. Each land vertex above `HILL_THRESHOLD(0.65)` normalized height is checked against its adjacency neighbors. True peaks are sorted by height, and the top `max(5, round(25 × areaRatio))` are returned as `{x, y, r, peakHeight, _idx}` for 3D mesh rendering. Peak radius is derived as `r = 3 + (normH − HILL_THRESHOLD) × 8`. This replaces the earlier approach of tracking feature placements directly — all peak discovery is now unified from the height field rather than split between feature tracking and a separate renderer-side scan.
 
 **Island Mask** — Manhattan distance (`(|nx| + |ny|)/2`) with smoothstep multiplier `1 − t²(3−2t)`. Creates diamond-shaped islands without angular perturbation. Per-template mask radius: island=0.44, archipelago=0.40, land=5.0 (effectively no clip).
 
