@@ -41,6 +41,13 @@ export function buildMeshMountains(region) {
   const hw = (extent?.width || 320) / 2;
   const hh = (extent?.height || 320) / 2;
 
+  const clipPlanes = [
+    new THREE.Plane(new THREE.Vector3( 1,  0,  0), hw),
+    new THREE.Plane(new THREE.Vector3(-1,  0,  0), hw),
+    new THREE.Plane(new THREE.Vector3( 0,  0,  1), hh),
+    new THREE.Plane(new THREE.Vector3( 0,  0, -1), hh),
+  ];
+
   for (const m of mounts) {
     if (m.peakHeight <= 0) continue;
     if (m.r <= 0) continue;
@@ -53,11 +60,9 @@ export function buildMeshMountains(region) {
     const rng = mulberry32((seed + (m._idx || 0) * 173 + 991) | 0);
     const tile = generateMountainTile(rng, 0, 0, m.peakHeight);
     const mesh = createMountainTileMesh(tile, m.peakHeight);
-    mesh.position.set(m.x, 0.0, m.y);
-    mesh.scale.set(m.r / 3.5, m.peakHeight * 7, m.r / 3.5);
-    const halfSize = m.r + tile.gridSize / 2;
-    if (mesh.position.x + halfSize < -hw || mesh.position.x - halfSize > hw ||
-        mesh.position.z + halfSize < -hh || mesh.position.z - halfSize > hh) continue;
+    mesh.material.clippingPlanes = clipPlanes;
+    mesh.position.set(m.x, -0.05, m.y);
+    mesh.scale.set(m.r / 3.5, m.peakHeight * 20, m.r / 3.5);
     group.add(mesh);
   }
 

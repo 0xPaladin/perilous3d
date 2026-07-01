@@ -96,16 +96,12 @@ function fillSinks(h, adj, pts, extent, epsilon) {
 function computeTemperature(pts, heights, waterLevel, baseTemp, extent) {
   const n = pts.length;
   const temperature = new Float64Array(n);
-  let maxLandH = -Infinity;
-  for (let i = 0; i < n; i++) {
-    if (heights[i] > waterLevel && heights[i] > maxLandH) maxLandH = heights[i];
-  }
-  if (maxLandH === -Infinity) maxLandH = 1;
+  const maxLandH = Math.max(1.0 - waterLevel, 0.001);
   for (let i = 0; i < n; i++) {
     const latFactor = pts[i][1] / (extent.height / 2);
     let t = baseTemp + latFactor * 0.5;
     if (heights[i] > waterLevel) {
-      t -= ((heights[i] - waterLevel) / maxLandH) * 10;
+      t -= Math.min((heights[i] - waterLevel) / maxLandH, 1.0) * 10;
     }
     temperature[i] = t;
   }
@@ -113,8 +109,9 @@ function computeTemperature(pts, heights, waterLevel, baseTemp, extent) {
 }
 
 function biomeFromMatrix(normH, tempBand, moisture) {
-  if (normH <= 0) return 0;
-  if (normH > 0.80) return 11;
+  const effectiveNormH = Math.min(normH, 1.0);
+  if (effectiveNormH <= 0) return 0;
+  if (effectiveNormH > 0.80) return 11;
   const moistureBand = Math.min(Math.floor(moisture / 5), 4);
   return BIOMES_MATRIX[moistureBand][tempBand];
 }
@@ -247,7 +244,7 @@ export function buildBiomes(h, { adj, pts, extent, waterLevel, baseTemp, npts, s
     for (let i = 0; i < moisture.length; i++) moisture[i] *= state.rainfall;
   }
 
-  const maxLandH = Math.max(heightMax - waterLevel, 0.001);
+  const maxLandH = Math.max(1.0 - waterLevel, 0.001);
   const biome = new Uint8Array(npts);
   for (let i = 0; i < npts; i++) {
     const normH = (h[i] - waterLevel) / maxLandH;
@@ -298,8 +295,9 @@ export function computeHabitability(pts, heights, waterLevel, biome, adj, flux, 
   for (let i = 0; i < n; i++) {
     if (heights[i] <= waterLevel) { habitability[i] = 0; continue; }
     const normH = (heights[i] - waterLevel) / maxLandH;
+    const effectiveNormH = Math.min(normH, 1.0);
     let score = HABITABILITY[biome[i]];
-    score *= Math.exp(-((normH - 0.35) ** 2) / 0.15);
+    score *= Math.exp(-((effectiveNormH - 0.35) ** 2) / 0.15);
     score *= Math.max(0.4, 1 - slopeArr[i] * 2);
     if (nearWater[i]) score += 10;
     habitability[i] = Math.max(0, Math.min(score, 125));

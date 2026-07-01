@@ -95,6 +95,7 @@ function generateResources(pts, heights, waterLevel, biome, maxLandH, count, rng
   const n = Math.max(2, count);
   const types = RESOURCE_TYPES.sort(() => rng() - 0.5).slice(0, n);
   const chosen = [];
+  const MIN_DIST_SQ = 20 * 20;
 
   for (const resType of types) {
     const weights = RESOURCE_BIOME_WEIGHT[resType];
@@ -104,14 +105,20 @@ function generateResources(pts, heights, waterLevel, biome, maxLandH, count, rng
       const b = biome[i];
       let w = weights[b] || 0;
       if (w <= 0) continue;
-      const normH = (heights[i] - waterLevel) / maxLandH;
+      const normH = Math.min((heights[i] - waterLevel) / maxLandH, 1.0);
       if (resType === 'copper/tin/iron' || resType === 'silver/gold/gems') w *= (0.5 + normH);
       scored.push({ idx: i, score: w + rng() * 0.5, x: pts[i][0], z: pts[i][1] });
     }
     scored.sort((a, b) => b.score - a.score);
-    if (scored.length > 0) {
-      const best = scored[0];
-      chosen.push({ idx: best.idx, x: best.x, z: best.z, type: resType });
+    for (const c of scored) {
+      let tooClose = false;
+      for (const p of chosen) {
+        const dx = c.x - p.x, dz = c.z - p.z;
+        if (dx * dx + dz * dz < MIN_DIST_SQ) { tooClose = true; break; }
+      }
+      if (tooClose) continue;
+      chosen.push({ idx: c.idx, x: c.x, z: c.z, type: resType });
+      break;
     }
   }
 

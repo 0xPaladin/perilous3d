@@ -20,6 +20,7 @@ export function createScene(canvas, region) {
   renderer.setSize(canvas.clientWidth, canvas.clientHeight);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFShadowMap;
+  renderer.localClippingEnabled = true;
   canvas.appendChild(renderer.domElement);
 
   const controls = new OrbitControls(camera, renderer.domElement);

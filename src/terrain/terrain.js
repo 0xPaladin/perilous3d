@@ -612,7 +612,7 @@ export function findCellsByTerrain(terrain, pts, heights, waterLevel, biome, riv
       if (terrain === 'water') cells.push(i);
       continue;
     }
-    const normH = (h - waterLevel) / maxLandH;
+    const normH = Math.min((h - waterLevel) / maxLandH, 1.0);
     if (terrain === 'mountains') {
       if (normH > 0.35) cells.push(i);
     } else if (terrain === 'hills') {
@@ -644,9 +644,9 @@ export function findNeighborCells(idx, adj, pts, maxDistKm) {
 }
 
 
-export function findMountainPeaks(pts, heights, waterLevel, heightMax, adj, extent) {
+export function findMountainPeaks(pts, heights, waterLevel, heightMax, adj, extent, biome) {
   const HILL_THRESHOLD = 0.65;
-  const maxLandH = Math.max(heightMax - waterLevel, 0.001);
+  const maxLandH = Math.max(1.0 - waterLevel, 0.001);
   const halfW = extent.width / 2;
   const halfH = extent.height / 2;
   const candidates = [];
@@ -654,8 +654,10 @@ export function findMountainPeaks(pts, heights, waterLevel, heightMax, adj, exte
     if (heights[i] <= waterLevel) continue;
     const localH = heights[i] - waterLevel;
     if (localH <= 0) continue;
-    const normH = localH / maxLandH;
+    const normH = Math.min(localH / maxLandH, 1.0);
     if (normH <= HILL_THRESHOLD) continue;
+    //must be glacial
+    if (biome && biome[i] !== 11) continue;
     let isPeak = true;
     for (const j of adj[i]) {
       if (heights[j] > heights[i]) { isPeak = false; break; }
@@ -715,7 +717,7 @@ export function buildRegion(template, cols, rows, seed, terrain, baseTemp = 22, 
   const { habitability, nearWater } = computeHabitability(pts, h, waterLevel, biome, adj, rivers.flux, maxLandH);
 
   //find mountain peaks from height field
-  const mounts = findMountainPeaks(pts, h, waterLevel, heightMax, adj, extent);
+  const mounts = findMountainPeaks(pts, h, waterLevel, heightMax, adj, extent, biome);
 
   const {
     resources,

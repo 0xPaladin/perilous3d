@@ -35,14 +35,14 @@ index.html
     │   ├── config.js       — Constants: terrain/cmd maps, biome matrix, habitability, trouble/feature types,
     │   │                    site tables, magic/elements/faction tables, place-name word lists, etc.
     │   ├── terrain.js      — full pipeline orchestration (simplex noise base + feature uplift):
-    │   │                    Terrain state commands (Scale/Rainfall) + template scripts
-    │   │                    (Hill/Range/Apply) → parseCommand → processTerrainCommands
+    │   │                    Terrain state commands (Scale/Rainfall/Radius/Ratio) + template scripts
+    │   │                    (Hill/Pit/Range/Trough/IslandMask/Apply) → parseCommand → processTerrainCommands
     │   │                    → generateSimplexBase (FBM + redistribution) → feature uplift
-    │   │                    (linear taper hills, Gaussian ridges) → Manhattan island mask
-    │   │                    → water level 0.5 → fill sinks
-    │   │                    + habitability scoring + cities/towns placement + resource deposits
+    │   │                    (linear taper hills, Gaussian ridges, pits, troughs) → Manhattan island mask
+    │   │                    → water level (per-template default, adjustable in GUI) → fill sinks
+    │   │                    + biomes (temperature + moisture → Azgaar matrix) + habitability scoring
     │   │                    + mountain peak discovery via findMountainPeaks()
-    │   │                    + feature resolution via resolveFeatures()
+    │   │                    + cities/towns/resources/ruins/trouble/features resolution
     │   ├── biomes.js        — biome pipeline (extracted from terrain.js):
     │   │                    buildBiomes() — sink fill → temperature → rivers → moisture → biome matrix
     │   │                    Helpers: downhill, zero, fillSinks, computeTemperature, biomeFromMatrix,
@@ -77,61 +77,65 @@ index.html
 ```
 Seed → mulberry32 PRNG → points scaled by map area (~3000 at 50 km, ~15000 at 320 km)
      → Delaunator triangulation → adjacency graph
-     → Terrain preset (wetland/lowland/woodland/highland/wasteland) + Map template (island/archipelago/bay/fjord/lake/land)
-         → terrain state commands (Scale/Rainfall/Radius/Ratio) + template command script (Hill/Pit/Range/Trough/IslandMask/Apply)
-         → parseCommand
-         → Step 1: generateSimplexBase — simplex-noise FBM (6 octaves, persistence 0.5, lacunarity 2.0, baseFreq 2.0)
-           + redistribution pow(e*1.2, 2.5) → 0–1 height field
-         → Step 2: feature uplift — Hill/Pit with linear taper (1-d/r) within radius, Range/Trough
-           with Gaussian cross-section (wiggle+spurs), no skirt/noise jitter
-         → Step 3: IslandMask applies Manhattan distance mask (|x|+|y| diamond smoothstep)
-         → Step 4: water level 0.5 (fixed) → fill sinks
-         → Rivers (downhill flux accumulation) → Moisture (Azgaar BFS + neighbor averaging) × terrain rainfall
-       → Temperature (latitudinal + elevation lapse) → Biomes (Azgaar 5×26 matrix)
-        → Habitability (biome × elevation × slope × water proximity, 0–125)
-        → Mountain Peaks (findMountainPeaks: scan height field for local maxima above HILL_THRESHOLD, top N by prominence)
-        → Cities (top habitability sites, ≥32 km apart, coastal-biased)
-       → Towns (3 per city ≤30 km radius or 4 standalone, ≥25 km apart, coastal-biased)
-        → Resources (Max(#cities,2) biome-weighted deposits, one type per deposit)
-        → Great Ruins (1–2 abandoned city sites near settlements, ≥30 km apart)
-        → Minor Ruins (4+1d6 random tall gray obelisks anywhere on land, ≥20 km apart)
-         → Trouble (1 per resource + safety-based danger markers near settlements/ruins, all ≥15 km from cities/towns, typed from TROUBLE_TYPES table)
-         → Features (8+2d8 narrative features: creature/hazard/obstacle/area/named place/site/faction presence/settlement)
-           → Site→resource/ruin/dungeon/landmark/outpost resolved with placeSiteFeature + names from generatePlaceName
-           → Hazard/obstacle/area: roll terrain type + filter subtype compatibility + find matching cells
-           → Named place: 1d2 → ruin (minorRuins) or landmark (landmarkSites), carries name
-           → Faction presence: random city/town selected, stored in factionSites[]
-           → Lair/dwelling: push trouble marker with type from TROUBLE_TYPES
-           → Per-vertex heights, indexed mesh, vertex colors by biome index
+      → Terrain preset (wetland/lowland/woodland/highland/wasteland) + Map template (island/archipelago/bay/fjord/lake/land)
+          → terrain state prepend (Scale/Rainfall) + template command script (Hill/Pit/Range/Trough/IslandMask/Apply)
+          → parseCommand → processTerrainCommands
+          → Step 1: generateSimplexBase — simplex-noise FBM (6 octaves, persistence 0.5, lacunarity 2.0, baseFreq 2.0)
+            + redistribution pow(e*1.2, 2.5) → 0–1 height field
+          → Step 2: feature uplift — Hill/Pit with linear taper (1-d/r) within radius, Range/Trough
+            with Gaussian cross-section (wiggle+spurs), pits cut below sea level to carve coastlines
+          → Step 3: IslandMask applies Manhattan distance mask (|x|+|y| diamond smoothstep) for island/archipelago
+          → Step 4: water level (per-template default from config.js, adjustable in GUI) → fill sinks
+          → Rivers (downhill flux accumulation) → Moisture (Azgaar BFS + neighbor averaging) × terrain rainfall
+        → Temperature (latitudinal + elevation lapse) → Biomes (Azgaar 5×26 matrix)
+         → Habitability (biome × elevation × slope × water proximity, 0–125)
+         → Mountain Peaks (findMountainPeaks: scan height field for local maxima above HILL_THRESHOLD, glacier biome only, top N by prominence)
+         → Cities (top habitability sites, ≥32 km apart, coastal-biased)
+        → Towns (3 per city ≤30 km radius or 4 standalone, ≥25 km apart, coastal-biased)
+         → Resources (Max(#cities,2) biome-weighted deposits, one type per deposit, ≥20 km apart)
+         → Great Ruins (1–2 abandoned city sites near settlements, ≥30 km apart)
+         → Minor Ruins (4+1d6 random tall gray obelisks anywhere on land, ≥20 km apart)
+          → Trouble (1 per resource + safety-based danger markers near settlements/ruins, all ≥15 km from cities/towns, typed from TROUBLE_TYPES table)
+          → Features (8+2d8 narrative features: creature/hazard/obstacle/area/named place/site/faction presence/settlement)
+            → Site→resource/ruin/dungeon/landmark/outpost resolved with placeSiteFeature + names from generatePlaceName
+            → Hazard/obstacle/area: roll terrain type + filter subtype compatibility + find matching cells
+            → Named place: 1d2 → ruin (minorRuins) or landmark (landmarkSites), carries name
+            → Faction presence: random city/town selected, stored in factionSites[]
+            → Lair/dwelling: push trouble marker with type from TROUBLE_TYPES
+            → Per-vertex heights, indexed mesh, vertex colors by biome index
 ```
 
 ### Per-Template Configuration
 
-| Template      | Mask radius | Mountain ranges           | Coastline                                      |
-| ------------- | ----------- | ------------------------- | ---------------------------------------------- |
-| `island`      | 0.44        | 2–4 moderate ranges       | Diamond-shaped island                          |
-| `archipelago` | 0.40        | 4–6 short narrow ranges   | Small broken islands (more water)              |
-| `bay`         | 5.0 (none)  | 1–3 long heavy ranges     | Full land (water from sea-level 0.5)           |
-| `fjord`       | 5.0 (none)  | 3–5 very narrow ranges    | Full land (water from sea-level 0.5)           |
-| `lake`        | 5.0 (none)  | 2–4 ranges ringing center | Full land (water from sea-level 0.5)           |
-| `land`        | 5.0 (none)  | 3–6 big continental belts | Fully continental, no clipping                 |
+Each template is defined by a command script in `TEMPLATE_SCRIPTS` in `src/terrain/config.js` plus a default water level in `TEMPLATE_WATER_LEVELS`.
+
+| Template      | Water level | Script approach                                           |
+| ------------- | ----------- | --------------------------------------------------------- |
+| `island`      | 0.25        | Hills + Manhattan-distance `IslandMask` → diamond island  |
+| `archipelago` | 0.25        | Carve center with deep Pit (Radius 10), scatter Pits + Hills → small broken islands, then `IslandMask` |
+| `bay`         | 0.03        | Pit cluster on right side (80–100% x-range) carves a bay opening; no mask |
+| `fjord`       | 0.02        | Trough + Ranges on right side carve parallel valleys, Hills + Pits inland |
+| `lake`        | 0.03        | Deep Pit cluster in center (40–60% range) carves a lake basin |
+| `land`        | 0.01        | Hills only, no mask or carving — fully continental        |
 
 ### Terrain Presets
 
-| Terrain    | Mountain count | Height scale | Rainfall | Distribution                                  |
-| ---------- | -------------- | ------------ | -------- | ---------------------------------------------- |
-| `wetland`  | 10–40          | 0.5×         | 1.8×     | 1–2 short wide ranges, low outlier             |
-| `lowland`  | 20–80          | 0.8×         | 1.0×     | 1–3 short medium ranges, low outlier           |
-| `woodland` | 40–120         | 1.0×         | 1.3×     | 2–4 moderate ranges, moderate outlier          |
-| `highland` | 100–300        | 1.5×         | 0.8×     | 2–4 moderate ranges, higher outlier            |
-| `wasteland`| 5–30           | 0.6×         | 0.4×     | 1–3 long narrow ranges, high outlier           |
+Each preset is a `TERRAIN_STATE_CMD` pair in `src/terrain/config.js` — Scale and Rainfall prepended before the template script.
+
+| Terrain    | Height scale | Rainfall | Effect                                              |
+| ---------- | ------------ | -------- | --------------------------------------------------- |
+| `wetland`  | 0.5×         | 1.8×     | Low mountains, very wet → lush lowland biomes       |
+| `lowland`  | 0.8×         | 1.0×     | Moderate terrain, normal rainfall                   |
+| `woodland` | 1.0×         | 1.3×     | Standard heights, wet → forest biomes dominate      |
+| `highland` | 1.5×         | 0.8×     | Tall mountains (more/denser glacier peaks), drier   |
+| `wasteland`| 0.6×         | 0.4×     | Low mountains, very dry → desert/barren biomes      |
 
 ### 3D Mesh
 
 - Delaunay triangles used directly as geometry (low-poly aesthetic)
 - `flatShading: true` for faceted look
 - Vertex colors mapped by Azgaar 5×26 biome matrix (temperature × moisture → 13 biome types)
-- HEIGHT_SCALE = 3.5 km max elevation (vertical exaggeration for readability)
+- Terrain mesh is flat (Y=0.1 land, Y=0.0 water); mountain meshes are separate 3D tiles scaled by peak prominence (Y-scale ∝ peakHeight, exaggerated ~20× for visibility)
 
 ## Running Locally
 
@@ -173,7 +177,7 @@ python -m http.server 8000
 ### Habitability Score
 Each terrain vertex is scored 0–125 based on:
 - **Biome base** (`HABITABILITY[13]` — Temperate deciduous forest = 100, Glacier/Marine = 0)
-- **Elevation gaussian** (favors 0.2–0.5 normalized height)
+- **Elevation gaussian** (favors 0.2–0.5 normalized height against the fixed `1.0 - waterLevel` reference)
 - **Slope penalty** (`max(0.4, 1 − slope×2)`)
 - **Water proximity bonus** (+10 within ~3 hops of coast/river)
 - **Coastal bias** (+20 extra for city selection)
@@ -194,7 +198,7 @@ All placed at Y = 0.1 (land flat height).
 `buildMeshForests()` skips any forest cluster whose centroid falls within **5 km** of a city or town, and **3 km** of a minor ruin, keeping settlements visually clear of tree cover.
 
 ### Resource Deposits
-`generateResources()` picks **Max(#cities, 2) unique resource types** per region (at least 2), each placed at its biome-weighted best location:
+`generateResources()` picks **Max(#cities, 2) unique resource types** per region (at least 2), each placed at its biome-weighted best location, with **≥20 km** mutual separation enforced between deposits:
 - **game/hide/fur** — Savanna, Grassland, Taiga, Tundra
 - **timber/clay** — Temperate deciduous/rainforest, Taiga
 - **herb/spice/dye** — Tropical seasonal/rainforest, Temperate rainforest
@@ -257,6 +261,8 @@ Outpost, landmark, hazard, obstacle, and area data is stored in `region.outpostS
 
 **Base Terrain (Simplex Noise)** — `generateSimplexBase()` generates the base height field using 6 octaves of simplex noise (`simplex-noise` library). Each octave uses an independent seeded `SimplexNoise` instance (mulberry32 PRNG). Normals are rescaled 0–1, then redistributed via `pow(e * 1.2, 2.5)` to create flat valleys. Base frequency 2.0 means ~2 major features span the map. Parameters: `octaves=6`, `persistence=0.5`, `lacunarity=2.0`, `exponent=2.5`, `fudge=1.2`.
 
+**Height Normalization** — All height-relative calculations (temperature lapse, biome thresholds, mountain classification, feature-terrain typing, resource elevation bonuses, habitability scoring) use a **fixed reference** of `1.0 - waterLevel` (the theoretical max simplex range above sea level, ~7.75 km) rather than the map's dynamic `heightMax - waterLevel`. Normalized height is `normH = Math.min((h - waterLevel) / (1.0 - waterLevel), 1.0)`, capped at 1.0 so feature uplift pushing heights above 1.0 doesn't distort the scale. This ensures consistent classification across all terrain presets — a simplex height of 0.55 maps to the same normH whether the map is wetland (Scale 0.5) or highland (Scale 1.5).
+
 **Feature Uplift** — Hills, pits, ridges, and troughs are applied on top of the simplex base via a queue-based command architecture (`TEMPLATE_SCRIPTS` + `TERRAIN_STATE_CMDS` → `parseCommand()` → `processTerrainCommands()`). Supported commands:
 
 | Command | Syntax | Effect |
@@ -274,21 +280,21 @@ Outpost, landmark, hazard, obstacle, and area data is stored in `region.outpostS
 
 Hills/Pits generate random centers within the bounding box; diameters are `runif(8, 22) × sizeScale × radiusScale`. Ridges/troughs generate a sinusoidal centerline with random wiggle amplitude/frequency, plus branching spurs; peak radii are `runif(3, 6) × sizeScale × radiusScale`. `Apply` flushes the queue. `Scale`/`Rainfall`/`Radius` are state commands that set multipliers applied to all subsequent features until changed again. Per-template scripts found in `TERRAIN_STATE_CMDS` (terrain state pre-commands) and `TEMPLATE_SCRIPTS` (template feature scripts) in `src/terrain/config.js`.
 
-**Mountain Peak Discovery** — `findMountainPeaks()` in `terrain/terrain.js` scans the final height field for local maxima. Each land vertex above `HILL_THRESHOLD(0.65)` normalized height is checked against its adjacency neighbors. True peaks are sorted by height, and the top `max(5, round(25 × areaRatio))` are returned as `{x, y, r, peakHeight, _idx}` for 3D mesh rendering. Peak radius is derived as `r = 3 + (normH − HILL_THRESHOLD) × 8`. This replaces the earlier approach of tracking feature placements directly — all peak discovery is now unified from the height field rather than split between feature tracking and a separate renderer-side scan.
+**Mountain Peak Discovery** — `findMountainPeaks()` in `terrain/terrain.js` scans the final height field for local maxima, restricted to **glacier biome cells** (biome index 11, which covers vertices where `normH > 0.80` against the fixed `1.0 - waterLevel` reference). Each land vertex above `HILL_THRESHOLD(0.65)` normalized height is checked against its adjacency neighbors. True peaks are sorted by height, and the top `max(5, round(25 × areaRatio))` are returned as `{x, y, r, peakHeight, _idx}` for 3D mesh rendering. Peak radius is derived as `r = 3 + (normH − HILL_THRESHOLD) × 8`. All peak discovery is unified from the height field — mountains appear only where the terrain is high enough to cross the glacier biome threshold, naturally limiting them to the highest peaks.
 
-**Island Mask** — Manhattan distance (`(|nx| + |ny|)/2`) with smoothstep multiplier `1 − t²(3−2t)`. Creates diamond-shaped islands without angular perturbation. Per-template mask radius: island=0.44, archipelago=0.40, land=5.0 (effectively no clip).
+**Island Mask** — Manhattan distance (`|nx| + |ny|`) normalized to `[0, 1]` with smoothstep multiplier `1 − t²(3−2t)`. Applied as `lerp(height, 1 − dist, mix)` — blend defaults to `0.5` but can be overridden (e.g., `IslandMask 0.7`). The mask always fills the full extent as a diamond shape; only island and archipelago templates use it.
 
-**Water Level** — Fixed at 0.5. No quantile-based sea level cut, no erosion, no coast cleaning, no template-specific carving.
+**Water Level** — Per-template default (island/archipelago=0.25, bay/lake=0.03, fjord=0.02, land=0.01) stored in `TEMPLATE_WATER_LEVELS` in `src/terrain/config.js`. Adjustable via the GUI Water Level slider (0–0.95). The value `1.0 - waterLevel` defines the fixed elevation range (~7.75 km) used for all height normalization across temperature, biomes, and mountain classification. No quantile-based sea level cut, no erosion, no coast cleaning.
 
 **Rivers** — Downhill flow accumulation on the Delaunay graph (`computeRivers()` in `terrain/biomes.js`). Each land point starts with unit flow, accumulates downstream via sorted height traversal. Points in the top 10% of accumulated flow become river channels. River segments follow downhill edges between river points and are rendered as blue `LineSegments` slightly above the terrain surface, with width proportional to √flux.
 
 **Moisture** — Azgaar-style two-phase computation (`computeMoisture()` in `terrain/biomes.js`). Phase A: BFS from rivers (10), ocean (8), and coast-adjacent land (7) with exponential decay (0.94× per hop inland). Phase B: neighbor averaging with river flux bonus (`4 + mean(raw + max(flux/10, 2), neighbors)`). Output range ~4–50, stored in `region.moisture`.
 
-**Temperature** — `computeTemperature()` in `terrain/biomes.js`. Base temp parameter (±0.5°C latitudinal gradient across map extent, south hot / north cold) with elevation lapse rate (−10°C max). Mapped to Azgaar's 26-band scale: `tempBand = round(clamp(20 − t, 0, 25))`. Stored in `region.temperature` and `region.tempBand`.
+**Temperature** — `computeTemperature()` in `terrain/biomes.js`. Base temp parameter (±0.5°C latitudinal gradient across map extent, south hot / north cold) with elevation lapse rate (−10°C max) computed against the fixed `1.0 - waterLevel` reference (not the map's actual max height). Mapped to Azgaar's 26-band scale: `tempBand = round(clamp(20 − t, 0, 25))`. Stored in `region.temperature` and `region.tempBand`.
 
-**Biomes** — `biomeFromMatrix()` in `terrain/biomes.js` uses Azgaar's exact 5×26 biome matrix (5 moisture bands × 26 temperature bands). Overrides: normH < 0 → Marine (0), normH > 0.80 → Glacier (11). Produces 13 biomes: Marine, Hot desert, Cold desert, Savanna, Grassland, Tropical seasonal forest, Temperate deciduous forest, Tropical rainforest, Temperate rainforest, Taiga, Tundra, Glacier, Wetland. Colors looked up via `BIOME_COLORS[13]` array in `mesh/mesher.js`.
+**Biomes** — `biomeFromMatrix()` in `terrain/biomes.js` uses Azgaar's exact 5×26 biome matrix (5 moisture bands × 26 temperature bands). Overrides: normH ≤ 0 → Marine (0), normH > 0.80 → Glacier (11), both using `effectiveNormH = Math.min(normH, 1.0)` against the fixed `1.0 - waterLevel` reference. Produces 13 biomes: Marine, Hot desert, Cold desert, Savanna, Grassland, Tropical seasonal forest, Temperate deciduous forest, Tropical rainforest, Temperate rainforest, Taiga, Tundra, Glacier, Wetland. Colors looked up via `BIOME_COLORS[13]` array in `mesh/mesher.js`.
 
-**Forests** — `buildMeshForests()` in `mesh/mesh_features.js` filters terrain vertices by normalized elevation (0.06–0.55), then applies a biome-index density lookup (`FOREST_DENSITY` array) with a 0.5 survival multiplier. Candidate points are clustered using a centroid-growing algorithm (8 km radius, min 5 per cluster). Each cluster centroid receives an InstancedMesh forest group via `generateForest()` from `mesh/mesh_tree.js`, which varies tree appearance by dominant biome (Taiga: tall trunk, narrow conical canopy, dark green; Rainforest: tall, large round canopy, deep green; Savanna: short trunk, wide flat canopy, yellow-green; Deciduous: medium, round, includes autumn hues).
+**Forests** — `buildMeshForests()` in `mesh/mesh_features.js` filters terrain vertices by normalized elevation (0.06–0.55 against the fixed `1.0 - waterLevel` reference), then applies a biome-index density lookup (`FOREST_DENSITY` array) with a 0.5 survival multiplier. Candidate points are clustered using a centroid-growing algorithm (8 km radius, min 5 per cluster). Each cluster centroid receives an InstancedMesh forest group via `generateForest()` from `mesh/mesh_tree.js`, which varies tree appearance by dominant biome (Taiga: tall trunk, narrow conical canopy, dark green; Rainforest: tall, large round canopy, deep green; Savanna: short trunk, wide flat canopy, yellow-green; Deciduous: medium, round, includes autumn hues).
 
 **Great Ruins** — `findRuins()` in `terrain/terrain.js` picks 1–2 high-habitability land cells near existing settlements (within 60 km), avoiding occupied city/town cells (30 km exclusion) and enforcing ≥30 km separation between ruins themselves. Rendered as clusters of broken stone pillars in `buildSettlements()`.
 
