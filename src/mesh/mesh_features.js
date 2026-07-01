@@ -33,42 +33,7 @@ const HILL_THRESHOLD = 0.65;
 const HEIGHT_SCALE = 3.5;
 
 export function buildMeshMountains(region) {
-  const { pts, heights, mounts, waterLevel, heightMax, seed, rawHeights } = region;
-  const group = new THREE.Group();
-  if (!mounts || mounts.length === 0) return group;
-
-  const maxLandH = Math.max(heightMax - waterLevel, 0.001);
-
-  for (let i = 0; i < mounts.length; i++) {
-    const m = mounts[i];
-    const mSeed = ((seed * 9301 + i * 49297 + 77777) % 233280) | 0;
-    const prng = mulberry32(mSeed);
-
-    const rawH = findNearestHeight(m.x, m.y, pts, heights);
-    const normH = Math.max(0, rawH - waterLevel) / Math.max(heightMax - waterLevel, 0.001);
-    const baseY = rawH > waterLevel ? (findNearestHeight(m.x, m.y, pts, rawHeights) * 3.0) : 0.0;
-
-    const tileH = Math.max(0.5, m.r * 0.8);
-    const xyScale = m.r / HEIGHT_SCALE;
-
-    if (normH > HILL_THRESHOLD) {
-      const tile = generateMountainTile(prng, 0, 0, tileH, 10);
-      const mesh = createMountainTileMesh(tile, tileH);
-      const yScale = m.r * 0.35;
-      mesh.scale.set(xyScale, yScale, xyScale);
-      mesh.position.set(m.x, baseY, m.y);
-      group.add(mesh);
-    } else {
-      const tile = generateHillTile(prng, 0, 0, tileH, 10);
-      const mesh = createTerrainTileMesh(tile, tileH, HILL_PALETTE);
-      const yScale = m.r * 0.18;
-      mesh.scale.set(xyScale, yScale, xyScale);
-      mesh.position.set(m.x, baseY, m.y);
-      group.add(mesh);
-    }
-  }
-
-  return group;
+  return new THREE.Group();
 }
 
 const FOREST_DENSITY = [0, 0, 0, 0.2, 0.2, 0.7, 0.7, 1.0, 1.0, 0.5, 0.05, 0, 0.4];
