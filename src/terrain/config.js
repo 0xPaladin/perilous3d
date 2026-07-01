@@ -1,3 +1,11 @@
+export const TEMPLATE_WATER_LEVELS = {
+  island: 0.25,
+  archipelago: 0.25,
+  bay: 0.03,
+  lake: 0.03,
+  land: 0.01,
+};
+
 export const TERRAIN_STATE_CMDS = {
   wetland:   ['Scale 0.5', 'Rainfall 1.8'],
   lowland:   ['Scale 0.8', 'Rainfall 1.0'],
@@ -11,6 +19,7 @@ export const TEMPLATE_SCRIPTS = {
     'Ratio',
     'Hill 5, 0.5, 30-70, 30-70',
     'Hill 5, 0.3, 30-70, 30-70',
+    'Hill 5, 1, 30-70, 30-70',
     'Apply',
     'IslandMask',
   ],
@@ -18,11 +27,12 @@ export const TEMPLATE_SCRIPTS = {
     'Radius 10',
     'Pit 1, 1, 45-55, 45-55',
     'Apply',
-    'Radius 2',
+    'Radius 3',
     'Ratio',
-    'Pit 8, 3, 25-75, 25-75',
+    'Pit 5, 2, 25-75, 25-75',
     'Apply',
-    'Hill 10, 0.5, 10-90, 10-90',
+    'Radius 1',
+    'Hill 10, 1, 10-90, 10-90',
     'Apply',
     'IslandMask',
   ],
@@ -35,18 +45,6 @@ export const TEMPLATE_SCRIPTS = {
     'Radius 1',
     'Ratio',
     'Pit 10, 1, 80-100, 20-80',
-  ],
-  fjord: [
-    'Radius 2',
-    'Trough 3, 50, 100, 50, 50',
-    'Apply',
-    'Radius 1',
-    'Range 2, 60, 100, 60, 50',
-    'Range 2, 40, 100, 60, 50',
-    'Apply',
-    'Ratio',
-    'Hill 10, 0.5, 10-90, 10-90',
-    'Pit 10, 0.5, 10-90, 10-90',
   ],
   lake: [
     'Radius 4',
@@ -61,15 +59,6 @@ export const TEMPLATE_SCRIPTS = {
 };
 
 export const HIGHLANDS_RIDGE = 'Range 1, 0, 20, 100, 40';
-
-export const TEMPLATE_WATER_LEVELS = {
-  island: 0.25,
-  archipelago: 0.25,
-  bay: 0.03,
-  fjord: 0.02,
-  lake: 0.03,
-  land: 0.01,
-};
 
 export const BIOMES_MATRIX = [
   new Uint8Array([1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 10]),

@@ -700,7 +700,7 @@ export function buildRegion(template, cols, rows, seed, terrain, baseTemp = 22, 
 
   //if highlands push ridge to start
   if(terrain === "highland") {
-    rawCommands.unshift(HIGHLANDS_RIDGE,'Apply');
+    //rawCommands.unshift(HIGHLANDS_RIDGE,'Apply');
   }
 
   //run commands

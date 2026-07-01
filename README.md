@@ -77,7 +77,7 @@ index.html
 ```
 Seed → mulberry32 PRNG → points scaled by map area (~3000 at 50 km, ~15000 at 320 km)
      → Delaunator triangulation → adjacency graph
-      → Terrain preset (wetland/lowland/woodland/highland/wasteland) + Map template (island/archipelago/bay/fjord/lake/land)
+       → Terrain preset (wetland/lowland/woodland/highland/wasteland) + Map template (island/archipelago/bay/lake/land)
           → terrain state prepend (Scale/Rainfall) + template command script (Hill/Pit/Range/Trough/IslandMask/Apply)
           → parseCommand → processTerrainCommands
           → Step 1: generateSimplexBase — simplex-noise FBM (6 octaves, persistence 0.5, lacunarity 2.0, baseFreq 2.0)
@@ -114,7 +114,6 @@ Each template is defined by a command script in `TEMPLATE_SCRIPTS` in `src/terra
 | `island`      | 0.25        | Hills + Manhattan-distance `IslandMask` → diamond island  |
 | `archipelago` | 0.25        | Carve center with deep Pit (Radius 10), scatter Pits + Hills → small broken islands, then `IslandMask` |
 | `bay`         | 0.03        | Pit cluster on right side (80–100% x-range) carves a bay opening; no mask |
-| `fjord`       | 0.02        | Trough + Ranges on right side carve parallel valleys, Hills + Pits inland |
 | `lake`        | 0.03        | Deep Pit cluster in center (40–60% range) carves a lake basin |
 | `land`        | 0.01        | Hills only, no mask or carving — fully continental        |
 
@@ -155,7 +154,7 @@ python -m http.server 8000
 
 | Param       | Values                                                  | Description                                              |
 | ----------- | ------------------------------------------------------- | -------------------------------------------------------- |
-| `template`  | `island`, `archipelago`, `bay`, `fjord`, `lake`, `land` | Map template (affects sea level)                         |
+| `template`  | `island`, `archipelago`, `bay`, `lake`, `land` | Map template (affects sea level)                         |
 | `seed`      | any URL-safe string                                     | Deterministic map seed                                   |
 | `terrain`   | `wetland`, `lowland`, `woodland`, `highland`, `wasteland` | Terrain preset (counts, heights, rainfall)           |
 | `climate`   | `Arctic`, `Sub-arctic`, `Temperate`, `Sub-tropical`, `Tropical` | Climate preset (base temperature)           |
@@ -284,7 +283,7 @@ Hills/Pits generate random centers within the bounding box; diameters are `runif
 
 **Island Mask** — Manhattan distance (`|nx| + |ny|`) normalized to `[0, 1]` with smoothstep multiplier `1 − t²(3−2t)`. Applied as `lerp(height, 1 − dist, mix)` — blend defaults to `0.5` but can be overridden (e.g., `IslandMask 0.7`). The mask always fills the full extent as a diamond shape; only island and archipelago templates use it.
 
-**Water Level** — Per-template default (island/archipelago=0.25, bay/lake=0.03, fjord=0.02, land=0.01) stored in `TEMPLATE_WATER_LEVELS` in `src/terrain/config.js`. Adjustable via the GUI Water Level slider (0–0.95). The value `1.0 - waterLevel` defines the fixed elevation range (~7.75 km) used for all height normalization across temperature, biomes, and mountain classification. No quantile-based sea level cut, no erosion, no coast cleaning.
+**Water Level** — Per-template default (island/archipelago=0.25, bay/lake=0.03, land=0.01) stored in `TEMPLATE_WATER_LEVELS` in `src/terrain/config.js`. Adjustable via the GUI Water Level slider (0–0.95). The value `1.0 - waterLevel` defines the fixed elevation range (~7.75 km) used for all height normalization across temperature, biomes, and mountain classification. No quantile-based sea level cut, no erosion, no coast cleaning.
 
 **Rivers** — Downhill flow accumulation on the Delaunay graph (`computeRivers()` in `terrain/biomes.js`). Each land point starts with unit flow, accumulates downstream via sorted height traversal. Points in the top 10% of accumulated flow become river channels. River segments follow downhill edges between river points and are rendered as blue `LineSegments` slightly above the terrain surface, with width proportional to √flux.
 

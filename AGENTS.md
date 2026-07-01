@@ -123,7 +123,7 @@ perilous3d/
   - `IslandMask <mix>` (optional, default `0.5`) — apply Manhattan-distance island shaping (`(|x|+|y|)` diamond + smoothstep).
   - `xRange`/`yRange` are 0–100 placement bounds. Hill/Pit diameters: `runif(8, 22) × sizeScale × radiusScale`. Ridge peak radii: `runif(3, 6) × sizeScale × radiusScale`.
 - **Island shape**: Manhattan distance mask (`(|nx| + |ny|)/2`) with smoothstep multiplicative falloff `1−t²(3−2t)`. Diamond-shaped islands without angular perturbation. Per-template radius: island 0.44, archipelago 0.40, land 5.0 (effectively no clip).
-- **Water level**: Fixed at 0.5. No quantile-based sea level cut, no erosion, no coast cleaning, no template-specific carving (fjord/lake/bay/landclamp removed). All height normalization uses the fixed `1.0 - waterLevel` reference (not map max), capped at 1.0.
+- **Water level**: Fixed at 0.5. No quantile-based sea level cut, no erosion, no coast cleaning, no template-specific carving (lake/bay/landclamp removed). All height normalization uses the fixed `1.0 - waterLevel` reference (not map max), capped at 1.0.
 - **Sink filling**: Kept so rivers flow correctly.
 - **Scale**: Extent configurable 50–400 km (default 320), HEIGHT_SCALE 3.5 km, camera scales with extent
 - **Clouds**: IcosahedronGeometry blobs at Y=80-120, drift slowly eastward
@@ -145,7 +145,7 @@ perilous3d/
 - **Forests**: `buildMeshForests()` filters terrain vertices by normalized elevation (0.06–0.55 against fixed `1.0 - waterLevel` reference), clusters points within 8 km radius (min 5 per cluster, centroid-growing algorithm), and places InstancedMesh forest groups using `generateForest()` from `mesh/mesh_tree.js` at cluster centroids, raised to terrain Y = 0.1. Tree appearance varies by biome via `BIOME_TREE` config (Taiga: tall trunk, narrow conical canopy, dark green; Rainforest: tall, large round canopy, deep green; Savanna: short trunk, wide flat canopy, yellow-green; Deciduous: medium, round, includes autumn hues).
 - **Features resolution**: The features loop in `buildRegion()` delegates to `resolveFeatures()` in `terrain/features.js`, which resolves generated features into map objects. It receives terrain helpers via destructured params (e.g., `placeSiteFeature()`, `findCellsByTerrain()`, terrain-compatibility filters). Named places resolve as ruin or landmark (1d2 roll), site→ruin/dungeon/landmark each call `generatePlaceName()`, lair/dwelling pushes a trouble marker, hazard/obstacle/area roll terrain type and find matching cells with ≥15 km city/town exclusion. Outposts, landmarks, hazards, obstacles, and areas are returned in new arrays (`outpostSites`, `landmarkSites`, `hazards`, `obstacles`, `areas`) and rendered by `buildSiteFeatures()` in `mesh/mesher.js`.
 **UI**: All user controls are powered by `lil-gui` (`src/gui/gui.js`). The GUI is initialized by `main.js` and exposes:
-- **Template** folder: map template dropdown (island, archipelago, bay, fjord, lake, land)
+- **Template** folder: map template dropdown (island, archipelago, bay, lake, land)
 - **Parameters** folder: Terrain (wetland/lowland/woodland/highland/wasteland), Climate (Arctic/Sub-arctic/Temperate/Sub-tropical/Tropical), Safety (Perilous/Dangerous/Unsafe/Safe → 0/1/2/3 cities), Map Size (50–400 km)
 - **Actions** folder: New Island (new random seed), Update (re-draw with same seed + current GUI params)
 - **Info** folder: read-only Seed display (auto-updates on generation)

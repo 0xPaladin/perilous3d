@@ -2,7 +2,7 @@
 // Each raiser takes a point and returns a height contribution in [-1, 1] range.
 // Best-effort reconstruction from minified Haxe/OpenFL output analysis.
 //
-// Templates: island, archipelago, bay, coast, fjord, peninsula, lake, land
+// Templates: island, archipelago, bay, coast, peninsula, lake, land
 
 import { Vec2 } from './grid.js';
 
@@ -310,8 +310,6 @@ export function getRaiser(type, gridW, gridH, seed) {
       return new BayRaiser();
     case 'coast':
       return new CoastRaiser();
-    case 'fjord':
-      return new FjordRaiser(center, radius);
     case 'peninsula':
       return new PeninsulaRaiser(center, radius);
     case 'lake':

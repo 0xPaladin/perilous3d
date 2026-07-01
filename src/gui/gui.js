@@ -25,7 +25,7 @@ export function initGUI({ app, generate, initialTemplate, initialTerrain, initia
 
   const templateFolder = gui.addFolder('Template');
   let waterLevelController;
-  templateFolder.add(options, 'template', ['island', 'archipelago', 'bay', 'fjord', 'lake', 'land'])
+  templateFolder.add(options, 'template', ['island', 'archipelago', 'bay', 'lake', 'land'])
     .name('Template').onFinishChange(() => {
       const wl = TEMPLATE_WATER_LEVELS[options.template];
       if (wl != null) {
