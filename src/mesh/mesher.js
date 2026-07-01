@@ -18,24 +18,8 @@ const BIOME_COLORS = [
   [0.54, 0.72, 0.33],  // 12 Wetland
 ];
 
-const BIOMES_MATRIX = [
-  new Uint8Array([1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 10]),
-  new Uint8Array([3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 9, 9, 9, 9, 10, 10, 10]),
-  new Uint8Array([5, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 9, 9, 9, 9, 9, 10, 10, 10]),
-  new Uint8Array([5, 6, 6, 6, 6, 6, 6, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 9, 9, 9, 9, 9, 9, 10, 10, 10]),
-  new Uint8Array([7, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 9, 9, 9, 9, 9, 9, 9, 10, 10]),
-];
-
-function biomeFromMatrix(normH, tempBand, moisture) {
-  if (normH <= 0) return 0;
-  if (normH > 0.80) return 11;
-  const moistureBand = Math.min(Math.floor(moisture / 5), 4);
-  return BIOMES_MATRIX[moistureBand][tempBand];
-}
-
 export function buildTerrainMesh(region) {
-  const { pts, triangles, heights, rawHeights, heightMax, waterLevel, tempBand, moisture, biome } = region;
-  const maxLandH = Math.max(heightMax - waterLevel, 0.001);
+  const { pts, triangles, heights, rawHeights, waterLevel, biome } = region;
   const TERRAIN_Y_SCALE = 3.0;
   const n = pts.length;
   const positions = new Float32Array(n * 3);
@@ -44,8 +28,7 @@ export function buildTerrainMesh(region) {
   for (let i = 0; i < n; i++) {
     const rawH = heights[i];
     const y = rawH > waterLevel ? (rawHeights[i] * TERRAIN_Y_SCALE) : 0.0;
-    const normH = (rawH - waterLevel) / maxLandH;
-    const b = (tempBand && moisture) ? biomeFromMatrix(normH, tempBand[i], moisture[i]) : (biome ? biome[i] : 0);
+    const b = biome ? biome[i] : 0;
     const c = BIOME_COLORS[b] || BIOME_COLORS[0];
     positions[i * 3 + 0] = pts[i][0];
     positions[i * 3 + 1] = y;
@@ -172,8 +155,7 @@ export function buildSettlements(region) {
 }
 
 export function buildBiomeViewMesh(region) {
-  const { pts, triangles, heights, rawHeights, heightMax, waterLevel, biome } = region;
-  const maxLandH = Math.max(heightMax - waterLevel, 0.001);
+  const { pts, triangles, heights, rawHeights, waterLevel, biome } = region;
   const TERRAIN_Y_SCALE = 3.0;
   const triCount = triangles.length / 3;
 
