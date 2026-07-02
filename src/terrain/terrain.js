@@ -1,11 +1,10 @@
-import Delaunator from 'delaunator';
-import { createNoise2D } from 'simplex-noise';
 import { generatePlaceName, resolveFeatures } from './features.js';
 
 //import constants from config
-import {HIGHLANDS_RIDGE, TERRAIN_STATE_CMDS, TEMPLATE_SCRIPTS, TROUBLE_TYPES} from "./config.js";
+import {TROUBLE_TYPES} from "./config.js";
 import { buildBiomes, computeHabitability, downhill, zero } from './biomes.js';
 import { generatePeoples } from '../people/people.js';
+import { buildDisplayFromState } from '../core/terrain_builder.js';
 
 export function createRng(seed) {
   let s = seed | 0;
@@ -685,47 +684,15 @@ export function buildRegion(template, cols, rows, seed, terrainType, baseTemp = 
   const rng = createRng(seed);
   const extent = { width: extentSize, height: extentSize };
   const areaRatio = (extentSize / 320) ** 2;
-  const npts = Math.max(3000, Math.floor((15000 + rng() * 5000) * areaRatio));
 
-  const pts = generatePoints(npts, extent, rng);
+  // Build state object for voronoi pipeline
+  const state_in = { seed, extent, waterLevel, template, terrain: terrainType, baseTemp, cityCount };
 
-  const flat = new Float64Array(npts * 2);
-  for (let i = 0; i < npts; i++) { flat[i * 2] = pts[i][0]; flat[i * 2 + 1] = pts[i][1]; }
-  const del = new Delaunator(flat);
-  const adj = buildAdjacency(del, npts);
-
-  // Build command list from terrain + template
-  const terrainPrepend = (TERRAIN_STATE_CMDS[terrainType] || TERRAIN_STATE_CMDS.highland);
-  const templateScript = (TEMPLATE_SCRIPTS[template] || TEMPLATE_SCRIPTS.island);
-  const rawCommands = [...terrainPrepend, ...templateScript];
-
-  //if highlands push ridge to start
-  if(terrainType === "highland") {
-    //rawCommands.unshift(HIGHLANDS_RIDGE,'Apply');
-  }
-
-  //run commands
-  const commands = rawCommands.map(parseCommand).filter(Boolean);
-
-  // State passed to processTerrainCommands (scale/rainfall/radius/ratio set by commands)
-  const cmdState = { scale: 1.0, rainfall: 1.0, radiusScale: 1.0, ratio: 1.0 };
-
-  // Step 1: Generate base terrain from simplex noise FBM + redistribution
-  let h = generateSimplexBase(pts, extent, seed);
-
-  // Step 2: Apply feature commands (hills, ridges, pits) as uplift on base
-  h = processTerrainCommands(commands, pts, extent, rng, cmdState, h).heights;
-
-  //biomes
-  const biomesResult = buildBiomes(h, { adj, pts, extent, waterLevel, baseTemp, npts, state: cmdState });
-  h = biomesResult.h;
-  const { rawHeights, heightMin, heightMax, temperature, tempBand, rivers, moisture, biome, maxLandH } = biomesResult;
-
-  //habitability
-  const { habitability, nearWater } = computeHabitability(pts, h, waterLevel, biome, adj, rivers.flux, maxLandH);
-
-  //find mountain peaks from height field
-  const mounts = findMountainPeaks(pts, h, waterLevel, heightMax, adj, extent, biome);
+  // Run voronoi-based display builder
+  const { display: voronoiDisplay, h, pts, adj, rivers, biome, maxLandH, habitability, nearWater, heightMax } = buildDisplayFromState(state_in);
+  const mounts = findMountainPeaks(pts, h, voronoiDisplay.waterLevel, heightMax, adj, voronoiDisplay.extent, biome);
+  voronoiDisplay.mounts = mounts;
+  voronoiDisplay.mountainCount = mounts.length;
 
   const {
     resources,
@@ -745,7 +712,7 @@ export function buildRegion(template, cols, rows, seed, terrainType, baseTemp = 
     rng,
     pts,
     h,
-    waterLevel,
+    waterLevel: 0,
     biome,
     maxLandH,
     habitability,
@@ -759,29 +726,6 @@ export function buildRegion(template, cols, rows, seed, terrainType, baseTemp = 
   });
 
   const peoples = generatePeoples(seed, { template, terrain: terrainType, baseTemp });
-
-  // Split: display data (geometry) vs state (configuration + feature placements)
-  const display = {
-    pts,
-    triangles: del.triangles,
-    halfedges: del.halfedges,
-    adj,
-    heights: Array.from(h),
-    rawHeights,
-    heightMin,
-    heightMax,
-    extent,
-    waterLevel,
-    temperature,
-    tempBand,
-    moisture,
-    biome,
-    rivers,
-    habitability,
-    nearWater,
-    mountainCount: mounts.length,
-    mounts,
-  };
 
   const regionState = {
     seed,
@@ -807,5 +751,5 @@ export function buildRegion(template, cols, rows, seed, terrainType, baseTemp = 
     peoples,
   };
 
-  return { display, state: regionState };
+  return { display: voronoiDisplay, state: regionState };
 }

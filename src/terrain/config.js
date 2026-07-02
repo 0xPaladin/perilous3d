@@ -58,6 +58,42 @@ export const TEMPLATE_SCRIPTS = {
   ],
 };
 
+// Voronoi-based terrain commands — new pipeline
+export const VORONOI_TERRAIN_SCRIPTS = {
+  wetland:   ['Land 60 noedge', 'Lake 15, 0.3, neighbors'],
+  lowland:   ['Land 70 noedge'],
+  woodland:  ['Land 65 noedge', 'Hill 20, 0.4, random', 'Lake 10, 0.2, neighbors'],
+  highland:  ['Land 50 noedge', 'Hill 30, 0.7, random', 'Range 50, 0.6, random, random'],
+  wasteland: ['Land 40 noedge'],
+};
+
+export const VORONOI_TEMPLATE_SCRIPTS = {
+  island: [
+    'Land 60 noedge',
+    'Hill 20, 0.5, random',
+    'Range 40, 0.7, random, random',
+  ],
+  archipelago: [
+    'Land 30 noedge',
+    'Land 15 noedge',
+    'Hill 15, 0.4, random',
+  ],
+  bay: [
+    'Land 50 east',
+    'Lake 15, 0.3, neighbors',
+    'Hill 10, 0.3, random',
+  ],
+  lake: [
+    'Land 60 noedge',
+    'Lake 20, 0.2, neighbors',
+  ],
+  land: [
+    'Land 100',
+    'Hill 25, 0.5, random',
+    'Range 30, 0.6, random, random',
+  ],
+};
+
 export const HIGHLANDS_RIDGE = 'Range 1, 0, 20, 100, 40';
 
 export const BIOMES_MATRIX = [
