@@ -1,45 +1,41 @@
-import Delaunator from 'delaunator';
-import { createNoise2D } from 'simplex-noise';
+import { Delaunay } from "d3-delaunay";
+import { createNoise2D } from "simplex-noise";
 import {
   generateVoronoiCells,
   findCellForPoint,
-  buildCellAdjacency
-} from './voronoi.js';
-import { processVoronoiCommands } from './terrain_commands.js';
-import { buildBiomes, computeHabitability } from '../terrain/biomes.js';
-import { VORONOI_TERRAIN_SCRIPTS, VORONOI_TEMPLATE_SCRIPTS } from '../terrain/config.js';
+  buildCellAdjacency,
+} from "./voronoi.js";
+import { processVoronoiCommands } from "./terrain_commands.js";
+import { buildBiomes, computeHabitability } from "../terrain/biomes.js";
+import {
+  VORONOI_TERRAIN_SCRIPTS,
+  VORONOI_TEMPLATE_SCRIPTS,
+  VORONOI_TERRAIN_RAINFALL,
+} from "../terrain/config.js";
 
 function createRng(seed) {
   let s = seed | 0;
   return function () {
-    s = s + 0x6D2B79F5 | 0;
-    let t = Math.imul(s ^ s >>> 15, 1 | s);
-    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
-    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    s = (s + 0x6d2b79f5) | 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
 
-function runif(lo, hi, rng) { return lo + rng() * (hi - lo); }
+function runif(lo, hi, rng) {
+  return lo + rng() * (hi - lo);
+}
 
 function generatePoints(n, extent, rng) {
   const pts = [];
   for (let i = 0; i < n; i++) {
-    pts.push([runif(-extent.width / 2, extent.width / 2, rng), runif(-extent.height / 2, extent.height / 2, rng)]);
+    pts.push([
+      runif(-extent.width / 2, extent.width / 2, rng),
+      runif(-extent.height / 2, extent.height / 2, rng),
+    ]);
   }
   return pts;
-}
-
-function buildAdjacency(delaunay, n) {
-  const { triangles } = delaunay;
-  const adj = Array.from({ length: n }, () => []);
-  const seen = Array.from({ length: n }, () => new Set());
-  for (let i = 0; i < triangles.length; i++) {
-    const a = triangles[i];
-    const b = triangles[(i % 3 === 2) ? i - 2 : i + 1];
-    if (!seen[a].has(b)) { seen[a].add(b); adj[a].push(b); }
-    if (!seen[b].has(a)) { seen[b].add(a); adj[b].push(a); }
-  }
-  return adj;
 }
 
 /**
@@ -57,13 +53,13 @@ function generateSimplexForPts(pts, extent, seed) {
 
   const noises = [];
   for (let o = 0; o < octaves; o++) {
-    const octaveSeed = (seed ^ 0xABCD) + o * 7919;
+    const octaveSeed = (seed ^ 0xabcd) + o * 7919;
     let s = octaveSeed | 0;
     const prng = function () {
-      s = s + 0x6D2B79F5 | 0;
-      let t = Math.imul(s ^ s >>> 15, 1 | s);
-      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
-      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+      s = (s + 0x6d2b79f5) | 0;
+      let t = Math.imul(s ^ (s >>> 15), 1 | s);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
     };
     noises.push(createNoise2D(prng));
   }
@@ -71,7 +67,10 @@ function generateSimplexForPts(pts, extent, seed) {
   for (let i = 0; i < pts.length; i++) {
     const nx = (pts[i][0] + half) / extentSize;
     const ny = (pts[i][1] + half) / extentSize;
-    let e = 0, maxAmp = 0, amp = 1, f = baseFreq;
+    let e = 0,
+      maxAmp = 0,
+      amp = 1,
+      f = baseFreq;
     for (let o = 0; o < octaves; o++) {
       e += amp * ((noises[o](nx * f, ny * f) + 1) / 2);
       maxAmp += amp;
@@ -87,64 +86,98 @@ function generateSimplexForPts(pts, extent, seed) {
 /**
  * Build display data using the voronoi cell pipeline.
  * Replaces the old generateSimplexBase + processTerrainCommands path.
- * 
+ *
  * Returns { h, pts, del, adj } — everything needed for the rest of buildRegion
  * (biomes, habitability, peaks, features, etc.).
  */
-export function buildHeightFieldFromVoronoi(pts, extent, seed, template, terrainType) {
-  const rng = createRng(seed ^ 0xCAFE);
+export function buildHeightFieldFromVoronoi(
+  pts,
+  extent,
+  seed,
+  template,
+  terrainType,
+) {
+  const rng = createRng(seed ^ 0xcafe);
 
   // Generate voronoi cells
-  const { centroids, cells } = generateVoronoiCells(extent, seed);
-  const { adj: cellAdj, hullSet } = buildCellAdjacency(centroids);
+  const { centroids, cells } = generateVoronoiCells(extent, rng);
+  const {
+    adj: cellAdj,
+    hullSet,
+    edgeSet,
+    delaunay: cellDelaunay,
+  } = buildCellAdjacency(centroids, extent);
 
-  // Parse and execute voronoi commands
-  const terrainPrepend = VORONOI_TERRAIN_SCRIPTS[terrainType] || VORONOI_TERRAIN_SCRIPTS.highland;
-  const templateScript = VORONOI_TEMPLATE_SCRIPTS[template] || VORONOI_TEMPLATE_SCRIPTS.island;
-  const rawCommands = [...terrainPrepend, ...templateScript];
+  // Parse and execute voronoi commands (pre + template + post)
+  const terrainScript =
+    VORONOI_TERRAIN_SCRIPTS[terrainType] || VORONOI_TERRAIN_SCRIPTS.highland;
+  const templateScript =
+    VORONOI_TEMPLATE_SCRIPTS[template] || VORONOI_TEMPLATE_SCRIPTS.island;
+  const rawCommands = [
+    ...terrainScript.pre,
+    ...templateScript,
+    ...terrainScript.post,
+  ];
   const commands = rawCommands
-    .map(str => {
+    .map((str) => {
       const parts = str.trim().split(/\s+/);
       const type = parts[0].toLowerCase();
-      if (type === 'land') {
+      if (type === "land") {
         const pct = parseInt(parts[1], 10) / 100;
         const constraint = parts[2] ? parts[2].toLowerCase() : null;
-        return { type: 'land', pct, constraint };
+        return { type: "land", pct, constraint };
       }
-      if (type === 'hill') {
+      if (type === "hill") {
         const pct = parseInt(parts[1], 10) / 100;
-        const size = parseFloat(parts[2]);
-        const placement = parts[3] ? parts[3].toLowerCase() : 'random';
-        return { type: 'hill', pct, size, placement };
+        const placement = parts[2] ? parts[2].toLowerCase() : "random";
+        return { type: "hill", pct, placement };
       }
-      if (type === 'lake') {
+      if (type === "lake") {
         const pct = parseInt(parts[1], 10) / 100;
-        const size = parseFloat(parts[2]);
-        const placement = parts[3] ? parts[3].toLowerCase() : 'neighbors';
-        return { type: 'lake', pct, size, placement };
+        const placement = parts[2] ? parts[2].toLowerCase() : "neighbors";
+        return { type: "lake", pct, placement };
       }
-        if (type === 'range' || type === 'trough') {
+      if (type === "scale") {
+        const val = parseFloat(parts[1]);
+        return { type: "scale", val };
+      }
+      if (type === "range" || type === "trough") {
         const pct = parseInt(parts[1], 10) / 100;
-        const size = parseFloat(parts[2]);
-        let startName = parts[3] ? parts[3].toLowerCase() : 'random';
-        let stopName = parts[4] ? parts[4].toLowerCase() : 'random';
+        let startName = parts[2] ? parts[2].toLowerCase() : "random";
+        let stopName = parts[3] ? parts[3].toLowerCase() : "random";
         const CORNER_NAMES = [
-          'topleft', 'top', 'topright', 'left', 'center', 'right',
-          'bottomleft', 'bottom', 'bottomright',
+          "topleft",
+          "top",
+          "topright",
+          "left",
+          "center",
+          "right",
+          "bottomleft",
+          "bottom",
+          "bottomright",
         ];
-        if (startName === 'random' || !CORNER_NAMES.includes(startName)) {
+        if (startName === "random" || !CORNER_NAMES.includes(startName)) {
           startName = CORNER_NAMES[Math.floor(rng() * CORNER_NAMES.length)];
         }
-        if (stopName === 'random' || !CORNER_NAMES.includes(stopName)) {
+        if (stopName === "random" || !CORNER_NAMES.includes(stopName)) {
           stopName = CORNER_NAMES[Math.floor(rng() * CORNER_NAMES.length)];
         }
-        return { type, pct, size, start: startName, stop: stopName };
+        return { type, pct, start: startName, stop: stopName };
       }
       return null;
     })
     .filter(Boolean);
 
-  processVoronoiCommands(commands, cells, centroids, cellAdj, hullSet, rng, extent);
+  const { islandGroups } = processVoronoiCommands(
+    commands,
+    cells,
+    centroids,
+    cellAdj,
+    edgeSet,
+    rng,
+    extent,
+    cellDelaunay,
+  );
 
   // Generate simplex noise per-point
   const simplexH = generateSimplexForPts(pts, extent, seed);
@@ -153,51 +186,95 @@ export function buildHeightFieldFromVoronoi(pts, extent, seed, template, terrain
   // 0 is the water boundary — water cells ≤ 0, land cells > 0.
   const heights = new Float64Array(pts.length);
   for (let i = 0; i < pts.length; i++) {
-    const ci = findCellForPoint(pts[i][0], pts[i][1], centroids);
+    const ci = findCellForPoint(pts[i][0], pts[i][1], centroids, cellDelaunay);
     const cell = cells[ci];
     const s = simplexH[i];
-    if (cell.type === 'water' || cell.type === 'lake' || cell.type === 'trough') {
+    if (
+      cell.type === "water" ||
+      cell.type === "lake" ||
+      cell.type === "trough"
+    ) {
       heights[i] = -1 + s;
-    } else if (cell.type === 'land') {
-      heights[i] = s * 0.5;
-    } else if (cell.type === 'hill' || cell.type === 'range') {
-      heights[i] = 0.5 + s * cell.heightRange;
+    } else if (cell.type === "land") {
+      heights[i] = 0.01 + s * 0.25;
+    } else if (cell.type === "hill") {
+      heights[i] = cell.heightBase + s * cell.heightRange;
+    } else if (cell.type === "range") {
+      heights[i] = cell.heightBase + s * cell.heightRange;
     } else {
-      heights[i] = s * 0.5;
+      heights[i] = s * 0.25;
     }
   }
 
-  return { heights, pts };
+  return { heights, pts, islandGroups };
 }
 
 /**
  * Build full display data from a region state using voronoi pipeline.
  */
 export function buildDisplayFromState(state) {
-  const { seed, extent, waterLevel, template, terrain: terrainType, baseTemp, cityCount } = state;
+  const {
+    seed,
+    extent,
+    waterLevel,
+    template,
+    terrain: terrainType,
+    baseTemp,
+    cityCount,
+  } = state;
   const rng = createRng(seed);
   const areaRatio = (extent.width / 320) ** 2;
   const npts = Math.max(3000, Math.floor((15000 + rng() * 5000) * areaRatio));
 
   // 1. Random points + triangulation
   const pts = generatePoints(npts, extent, rng);
-  const flat = new Float64Array(npts * 2);
-  for (let i = 0; i < npts; i++) { flat[i * 2] = pts[i][0]; flat[i * 2 + 1] = pts[i][1]; }
-  const del = new Delaunator(flat);
-  const adj = buildAdjacency(del, npts);
+  const del = Delaunay.from(pts);
+  const adj = Array.from({ length: npts }, (_, i) =>
+    Array.from(del.neighbors(i)),
+  );
 
   // 2. Build height field from voronoi cells (0 = water boundary)
-  const { heights: h } = buildHeightFieldFromVoronoi(pts, extent, seed, template, terrainType);
+  const { heights: h } = buildHeightFieldFromVoronoi(
+    pts,
+    extent,
+    seed,
+    template,
+    terrainType,
+  );
 
   // 3. Biomes, rivers, etc. (0 is the water boundary for voronoi terrain)
-  const state_ = { scale: 1.0, rainfall: 1.0, radiusScale: 1.0, ratio: 1.0 };
-  const biomesResult = buildBiomes(h, { adj, pts, extent, waterLevel: 0, baseTemp, npts, state: state_ });
+  const state_ = { scale: 1.0, rainfall: VORONOI_TERRAIN_RAINFALL[terrainType] ?? 1.0, radiusScale: 1.0, ratio: 1.0 };
+  const biomesResult = buildBiomes(h, {
+    adj,
+    pts,
+    extent,
+    waterLevel: 0,
+    baseTemp,
+    npts,
+    state: state_,
+  });
   const finalH = biomesResult.h;
-  const { rawHeights, heightMin, heightMax, temperature, tempBand, rivers, moisture, biome, maxLandH } = biomesResult;
+  const {
+    rawHeights,
+    heightMin,
+    heightMax,
+    temperature,
+    tempBand,
+    rivers,
+    moisture,
+    biome,
+    maxLandH,
+  } = biomesResult;
 
-  const { habitability, nearWater } = computeHabitability(pts, finalH, 0, biome, adj, rivers.flux, maxLandH);
-
-
+  const { habitability, nearWater } = computeHabitability(
+    pts,
+    finalH,
+    0,
+    biome,
+    adj,
+    rivers.flux,
+    maxLandH,
+  );
 
   // 4. Build display object (mountains/peaks computed later in buildRegion)
   const display = {
@@ -222,5 +299,16 @@ export function buildDisplayFromState(state) {
     mounts: [],
   };
 
-  return { display, h: finalH, pts, adj, rivers, biome, maxLandH, habitability, nearWater, heightMax };
+  return {
+    display,
+    h: finalH,
+    pts,
+    adj,
+    rivers,
+    biome,
+    maxLandH,
+    habitability,
+    nearWater,
+    heightMax,
+  };
 }

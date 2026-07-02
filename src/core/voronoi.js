@@ -1,42 +1,23 @@
-import Delaunator from 'delaunator';
-
-/**
- * Voronoi cell generation and point-to-cell lookup.
- * Cells are a coarse grid overlay used by terrain commands to determine
- * land/water/hill assignment. Each point in the display pts array
- * maps to the nearest cell centroid.
- */
-
-function createRng(seed) {
-  let s = seed | 0;
-  return function () {
-    s = s + 0x6D2B79F5 | 0;
-    let t = Math.imul(s ^ s >>> 15, 1 | s);
-    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
-    return ((t ^ t >>> 14) >>> 0) / 4294967296;
-  };
-}
-
-function runif(lo, hi, rng) { return lo + rng() * (hi - lo); }
+import { Delaunay } from "d3-delaunay";
 
 /**
  * Generate voronoi cell centroids for an extent.
  * Cell count scales with area: 25 cells at 50 km, proportional to areaRatio.
+ * Accepts an external rng function (from the caller) to avoid duplicating PRNG code.
  */
-export function generateVoronoiCells(extent, seed) {
-  const rng = createRng(seed ^ 0xABCD);
-  const areaRatio = (extent.width / 320) ** 2;
+export function generateVoronoiCells(extent, rng) {
+  const areaRatio = (extent.width * extent.width) / (50 * 50);
   const nCells = Math.max(25, Math.floor(25 * areaRatio));
   const centroids = [];
   for (let i = 0; i < nCells; i++) {
     centroids.push([
-      runif(-extent.width / 2, extent.width / 2, rng),
-      runif(-extent.height / 2, extent.height / 2, rng),
+      -extent.width / 2 + rng() * extent.width,
+      -extent.height / 2 + rng() * extent.height,
     ]);
   }
   const cells = centroids.map((_, i) => ({
     idx: i,
-    type: 'water',
+    type: "water",
     heightBase: 0,
     heightRange: 0,
   }));
@@ -44,43 +25,37 @@ export function generateVoronoiCells(extent, seed) {
 }
 
 /**
- * Find the nearest voronoi cell index for a point (brute force — nCells is small).
+ * Build cell adjacency from centroids via d3-delaunay Voronoi.
+ * Returns { adj, hullSet, edgeSet, delaunay } where edgeSet contains indices of cells whose
+ * Voronoi polygon touches the extent boundary (clipped cells).
  */
-export function findCellForPoint(x, z, centroids) {
-  let bestIdx = 0;
-  let bestSq = Infinity;
-  for (let i = 0; i < centroids.length; i++) {
-    const dx = x - centroids[i][0];
-    const dz = z - centroids[i][1];
-    const dsq = dx * dx + dz * dz;
-    if (dsq < bestSq) {
-      bestSq = dsq;
-      bestIdx = i;
+export function buildCellAdjacency(centroids, extent) {
+  const n = centroids.length;
+  const del = Delaunay.from(centroids);
+  const hw = extent.width / 2, hh = extent.height / 2;
+  const voronoi = del.voronoi([-hw, -hh, hw, hh]);
+  const adj = Array.from({ length: n }, (_, i) => Array.from(voronoi.neighbors(i)));
+
+  // Scan each cell's clipped polygon — if any vertex is on the extent boundary,
+  // the cell is an edge cell.
+  const edgeSet = new Set();
+  for (const poly of voronoi.cellPolygons()) {
+    const idx = poly.index;
+    for (const [px, pz] of poly) {
+      if (px === -hw || px === hw || pz === -hh || pz === hh) {
+        edgeSet.add(idx);
+        break;
+      }
     }
   }
-  return bestIdx;
+
+  const hullSet = new Set(del.hull);
+  return { adj, hullSet, edgeSet, delaunay: del };
 }
 
 /**
- * Build cell adjacency from centroids via Delaunator.
- * Returns { adj, hullSet } where hullSet contains indices of hull (edge) cells.
+ * Find the nearest voronoi cell index for a point using d3-delaunay's walk search.
  */
-export function buildCellAdjacency(centroids) {
-  const n = centroids.length;
-  const flat = new Float64Array(n * 2);
-  for (let i = 0; i < n; i++) {
-    flat[i * 2] = centroids[i][0];
-    flat[i * 2 + 1] = centroids[i][1];
-  }
-  const del = new Delaunator(flat);
-  const adj = Array.from({ length: n }, () => []);
-  const seen = Array.from({ length: n }, () => new Set());
-  const hullSet = new Set(del.hull);
-  for (let i = 0; i < del.triangles.length; i++) {
-    const a = del.triangles[i];
-    const b = del.triangles[(i % 3 === 2) ? i - 2 : i + 1];
-    if (!seen[a].has(b)) { seen[a].add(b); adj[a].push(b); }
-    if (!seen[b].has(a)) { seen[b].add(a); adj[b].push(a); }
-  }
-  return { adj, hullSet };
+export function findCellForPoint(x, z, _centroids, delaunay) {
+  return delaunay.find(x, z);
 }

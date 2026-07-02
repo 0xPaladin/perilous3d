@@ -17,7 +17,7 @@ Perilous 3D generates a **50–400 km configurable** map (default 320×320 km) w
 ## Tech Stack
 
 - **Three.js r185** — 3D rendering, `BufferGeometry`, `MeshLambertMaterial`, `OrbitControls`
-- **Delaunator** — Delaunay triangulation (mesh topology for 3D terrain)
+- **d3-delaunay** — Delaunay triangulation + Voronoi diagram for mesh topology and cell-based terrain shaping
 - **lil-gui** — floating control panel for user parameters and actions
 - **simplex-noise** — seeded simplex noise for base terrain FBM generation
 - **HTML5 import maps** — CDN-based dependency loading
@@ -67,20 +67,26 @@ index.html
 
 ```
 Seed → mulberry32 PRNG → random points scaled by map area (~3K min, ~15-20K at 320 km)
-  → Delaunator triangulation → adjacency graph
+  → d3-delaunay triangulation → adjacency graph
   → Voronoi cells (~25 at 50 km, scales with area) uniformly distributed across extent
-  → Terrain preset (VORONOI_TERRAIN_SCRIPTS) + Map template (VORONOI_TEMPLATE_SCRIPTS)
-    → Parse commands (Land/Hill/Lake/Range/Trough) → processVoronoiCommands
-      → Land: BFS from seed cells, with optional noedge or cardinal-direction constraint
-      → Hill: randomly tag land cells or BFS cluster
-      → Lake: convert land cells back to water, BFS or random
-      → Range/Trough: walk line between named locations, tag land cells along the line
+  → Terrain preset (pre + post) + template → VORONOI_TERRAIN_SCRIPTS + VORONOI_TEMPLATE_SCRIPTS
+    → Parse commands (Scale/Land/Hill/Lake/Range/Trough) → processVoronoiCommands
+      → Scale: sets terrainScale multiplier for hill/range heightRange (lowland=0.25, highland=1.5, etc.)
+      → Land: BFS fill from seed cells, with optional noedge or cardinal-direction constraint.
+              Each Land command creates an island group. Subsequent Land noedge commands
+              avoid cells adjacent to existing island groups, keeping islands separate.
+      → Hill: randomly tag land cells (pct% of land), sets heightBase=0.25, heightRange=1.25×scale
+      → Lake: convert land cells back to water, optionally BFS from random start
+      → Range/Trough: walk line between named locations, tag land cells along the line;
+                       range tags as high (heightBase=0.25, heightRange=1.25×scale),
+                       trough tags as water
   → Per-point simplex noise (FBM, 6 octaves, persistence 0.5, lacunarity 2.0, baseFreq 2.0, exponent 3)
   → Height mapping by cell type (0 is the water boundary):
       Water/lake/trough: -1 + simplex → [-1, 0]
-      Land:             simplex × 0.5 → [0, 0.5]
-      Hill/range:       0.5 + simplex × heightRange → [0.5, 0.5+heightRange]
-  → Sink fill → rivers → moisture × terrain rainfall → temperature → biomes (Azgaar 5×26 matrix)
+      Land:             0.01 + simplex × 0.25 → [0.01, 0.26]
+      Hill:             heightBase + simplex × heightRange → [0.25, 0.25+1.25×scale]
+      Range:            heightBase + simplex × heightRange → [0.25, 0.25+1.25×scale]
+  → Sink fill → rivers → moisture × terrain rainfall multiplier → temperature → biomes (Azgaar 5×26 matrix)
     → Habitability (biome × elevation × slope × water proximity, 0–125)
     → Mountain Peaks (glacier biome local maxima, top N by prominence)
     → Cities (top habitability sites, ≥32 km apart, coastal-biased)
@@ -96,25 +102,27 @@ Seed → mulberry32 PRNG → random points scaled by map area (~3K min, ~15-20K 
 
 Each template is defined by a command script in `VORONOI_TEMPLATE_SCRIPTS` in `src/terrain/config.js`.
 
-| Template      | Command approach                                         |
-| ------------- | --------------------------------------------------------- |
-| `island`      | Land 60% interior + Hills + Range across center           |
-| `archipelago` | Land 30% + 15% interior (two passes) + Hills              |
-| `bay`         | Land 50% east side + Lake on neighbors + Hills            |
-| `lake`        | Land 60% interior + Lake clusters in center               |
-| `land`        | Land 100% (full map) + Hills + Range                      |
+| Template      | Command approach                                              |
+| ------------- | ------------------------------------------------------------ |
+| `island`      | Land 45% interior + Hills + Range across center              |
+| `archipelago` | Land 5% + 10% + 5% interior (3 passes, separate islands) + Hills |
+| `bay`         | Land 60% east side + Hills                                   |
+| `lake`        | Land 100% (full map) + Lake clusters in center               |
+| `land`        | Land 100% (full map) + Hills + Range                         |
 
 ### Terrain Presets
 
-Each preset is a `VORONOI_TERRAIN_SCRIPTS` entry prepended before the template script.
+Terrain scripts now use `{ pre: [...], post: [...] }` format — `pre` runs before the template, `post` after.
 
-| Terrain    | Commands                                      | Effect                                         |
-| ---------- | --------------------------------------------- | ---------------------------------------------- |
-| `wetland`  | Land 60% noedge + Lake 15% neighbors          | Wet, marshy terrain with lakes                 |
-| `lowland`  | Land 70% noedge                               | Mostly land, minimal features                  |
-| `woodland` | Land 65% noedge + Hill 20% + Lake 10%         | Moderate land with hills and small lakes       |
-| `highland` | Land 50% noedge + Hill 30% + Range 50%        | Less land, more hills and ridgelines           |
-| `wasteland`| Land 40% noedge                               | Sparsely populated, mostly water               |
+| Terrain    | pre (Scale) | post (terrain shaping) | Rainfall multiplier | Effect                                 |
+| ---------- | ----------- | ---------------------- | ------------------- | -------------------------------------- |
+| `wetland`  | `Scale 0.5` | `Lake 25 random`       | 1.5                 | Gentle terrain, many lakes, wettest    |
+| `lowland`  | `Scale 0.25`| (none)                 | 0.8                 | Very flat terrain, moderate moisture   |
+| `woodland` | `Scale 0.75`| `Hill 20 random`       | 1.2                 | Rolling hills, moist                   |
+| `highland` | `Scale 1.5` | `Hill 30 random` + `Range 60 random random` | 1.0 | Tall hills + ridge, neutral moisture   |
+| `wasteland`| `Scale 1.0` | (none)                 | 0.4                 | Flat, driest settings                  |
+
+Land commands are exclusively in templates — terrain scripts only provide Scale, Hill, Lake, and Range/Trough.
 
 ### 3D Mesh
 
@@ -244,7 +252,7 @@ Outpost, landmark, hazard, obstacle, and area data is stored in `region.outpostS
 
 **PRNG** — Mulberry32 seeded RNG for deterministic generation (embedded in `terrain/terrain.js`).
 
-**Delaunay Triangulation** — [Delaunator](https://github.com/mapbox/delaunator) provides mesh topology from random points (scales with map area: ~3K minimum, ~15–20K at 320 km, ~23–31K at 400 km).
+**Delaunay Triangulation** — [d3-delaunay](https://github.com/d3/d3-delaunay) provides mesh topology from random points (scales with map area: ~3K minimum, ~15–20K at 320 km, ~23–31K at 400 km) plus Voronoi diagram for cell-based terrain shaping.
 
 **Voronoi Cells** — `generateVoronoiCells()` in `src/core/voronoi.js` generates uniformly distributed centroid points across the extent. Cell count: `max(25, floor(25 × areaRatio))` — 25 at 50 km (areaRatio = 0.024), 25 at 320 km (areaRatio = 1.0), 39 at 400 km (areaRatio = 1.56). Each cell starts as type `water`. Commands tag cells with terrain types (land/hill/lake/range/trough). Each point in the display `pts` array maps to the nearest cell centroid for height assignment.
 
@@ -252,10 +260,11 @@ Outpost, landmark, hazard, obstacle, and area data is stored in `region.outpostS
 
 | Command | Behavior |
 | ------- | -------- |
-| `Land` | BFS fill from seed cells. With `noedge` constraint, only non-edge cells are candidates; with cardinal direction, only cells in that direction's edge region (beyond 65% of half-extent) are seeded and expanded inward. |
-| `Hill` | Tags `pct`% of existing land cells. `placement=random` shuffles and picks; `placement=neighbors` BFS from a random land cell. Sets `heightBase=0.5`, `heightRange=size`. |
+| `Scale` | Sets terrainScale multiplier for hill/range heightRange. Applied as `heightRange = 1.25 × scale`. |
+| `Land` | BFS fill from seed cells. With `noedge` constraint, only non-edge cells are candidates (seed prefers cell nearest origin, falls back to random); with cardinal direction, only cells in that direction's edge region (beyond 65% of half-extent) are seeded and expanded inward. Each Land command creates an island group — subsequent `Land noedge` excludes neighbor cells of existing groups. |
+| `Hill` | Tags `pct`% of existing land cells. `placement=random` shuffles and picks; `placement=neighbors` BFS from a random land cell. Sets `heightBase=0.25`, `heightRange=1.25×scale`. |
 | `Lake` | Converts `pct`% of land cells back to water. `placement=neighbors` BFS from a random land cell. |
-| `Range` | Walks the line between `start` and `stop` named locations (topleft/top/topright/left/center/right/bottomleft/bottom/bottomright/random). Tags `pct`% of land cells along the line as `range` type. Range/trough continues past water cells — the walk doesn't stop at water, it just doesn't tag them; cells on the far shore are eligible. |
+| `Range` | Walks the line between `start` and `stop` named locations (topleft/top/topright/left/center/right/bottomleft/bottom/bottomright/random). Tags `pct`% of land cells along the line as `range` type. Sets `heightBase=0.25`, `heightRange=1.25×scale`. Range/trough continues past water cells — the walk doesn't stop at water, it just doesn't tag them; cells on the far shore are eligible. |
 | `Trough` | Same as Range but tags cells as water instead of high terrain. |
 
 **Base Terrain (Simplex Noise)** — `generateSimplexForPts()` in `src/core/terrain_builder.js` generates per-point noise using 6 octaves of simplex noise (`simplex-noise` library). Each octave uses an independent seeded `SimplexNoise` instance (mulberry32 PRNG). Noise values are normalized 0–1 per octave, averaged, then redistributed via `pow(e, 3)`. Parameters: `octaves=6`, `persistence=0.5`, `lacunarity=2.0`, `baseFreq=2.0`, `exponent=3`. Octave seeds: `(seed ^ 0xABCD) + o × 7919`.
@@ -265,16 +274,17 @@ Outpost, landmark, hazard, obstacle, and area data is stored in `region.outpostS
 | Cell type | Height range | Formula |
 | --------- | ------------ | ------- |
 | `water` / `lake` / `trough` | [-1, 0] | `-1 + simplex` |
-| `land` | [0, 0.5] | `simplex × 0.5` |
-| `hill` / `range` | [0.5, 0.5+heightRange] | `0.5 + simplex × heightRange` |
+| `land` | [0.01, 0.26] | `0.01 + simplex × 0.25` |
+| `hill` | [0.25, 0.25+1.25×scale] | `heightBase + simplex × heightRange` where `heightBase=0.25`, `heightRange=1.25×scale` |
+| `range` | [0.25, 0.25+1.25×scale] | `heightBase + simplex × heightRange` where `heightBase=0.25`, `heightRange=1.25×scale` |
 
-No quantile-based sea level cut, no erosion, no coast cleaning, no island mask.
+No quantile-based sea level cut, no erosion, no coast cleaning, no island mask. Height ranges: land `0.01–0.26`, hill/range `0.25–0.25+1.25×scale`.
 
 **Height Normalization** — All height-relative calculations (temperature lapse, biome thresholds, mountain classification, feature-terrain typing, resource elevation bonuses, habitability scoring) use a **fixed reference** of `maxLandH = 1.0` (since waterLevel is 0). Normalized height is `normH = Math.min(height / 1.0, 1.0)`, effectively `normH = height` capped at 1.0. This keeps classification straightforward — a land cell at height 0.55 has normH 0.55.
 
 **Rivers** — Downhill flow accumulation on the Delaunay graph (`computeRivers()` in `terrain/biomes.js`). Each land point starts with unit flow, accumulates downstream via sorted height traversal. Points in the top 10% of accumulated flow become river channels. River segments follow downhill edges between river points and are rendered as blue `LineSegments` slightly above the terrain surface, with width proportional to √flux.
 
-**Moisture** — Azgaar-style two-phase computation (`computeMoisture()` in `terrain/biomes.js`). Phase A: BFS from rivers (10), ocean (8), and coast-adjacent land (7) with exponential decay (0.94× per hop inland). Phase B: neighbor averaging with river flux bonus (`4 + mean(raw + max(flux/10, 2), neighbors)`). Output range ~4–50.
+**Moisture** — Azgaar-style two-phase computation (`computeMoisture()` in `terrain/biomes.js`). Phase A: BFS from rivers (10), ocean (8), and coast-adjacent land (7) with exponential decay (0.94× per hop inland). Phase B: neighbor averaging with river flux bonus (`4 + mean(raw + max(flux/10, 2), neighbors)`). Output range ~4–50. Final moisture is multiplied by the terrain's **rainfall multiplier** (`VORONOI_TERRAIN_RAINFALL` in `config.js`): wetland=1.5, woodland=1.2, highland=1.0, lowland=0.8, wasteland=0.4.
 
 **Temperature** — `computeTemperature()` in `terrain/biomes.js`. Base temp parameter ±0.5°C latitudinal gradient across map extent (south hot / north cold) with elevation lapse rate (−10°C max) computed against `maxLandH = 1.0`. Mapped to Azgaar's 26-band scale: `tempBand = round(clamp(20 − t, 0, 25))`.
 

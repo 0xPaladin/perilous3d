@@ -10,7 +10,8 @@ Browser-based procedural terrain generator with **cartoon-style mountains** on a
 
 ```
 perilous3d/
-├── index.html          # shell with import maps (three, delaunator, lil-gui, simplex-noise) + inline CSS + UI chrome
+    ├── index.html          # shell with import maps (three, d3-delaunay, lil-gui, simplex-noise) + inline CSS + UI chrome
+    │                       #   d3-delaunay replaces delaunator; provides Delaunay triangulation + built-in Voronoi diagram
 ├── README.md           # full architecture + algorithm notes
 ├── AGENTS.md           # 🤖 you are here
 └── src/
@@ -24,7 +25,7 @@ perilous3d/
     │   ├── terrain_commands.js  # Voronoi command execution: BFS fill, line walking, cardinal filtering
     │   └── terrain_builder.js   # Voronoi pipeline orchestrator: commands → cell tagging → simplex → height mapping → biomes → display
     ├── terrain/
-    │   ├── config.js       # Constants: terrain/cmd maps, biome matrix, habitability, trouble/feature types,
+    │   ├── config.js       # Constants: terrain/cmd maps, terrain rainfall/scaling, biome matrix, habitability, trouble/feature types,
     │   │                    # site tables, magic/elements/faction tables, place-name word lists,
     │   │                    # VORONOI_TERRAIN_SCRIPTS and VORONOI_TEMPLATE_SCRIPTS
     │   ├── terrain.js      # buildRegion() — entry point. Calls buildDisplayFromState() from terrain_builder.js,
@@ -109,22 +110,26 @@ perilous3d/
 
 ```
 Seed → mulberry32 PRNG → random points scaled by map area (~3K min, ~15-20K at 320 km)
-  → Delaunator triangulation → adjacency graph
+  → d3-delaunay triangulation → adjacency graph
   → Voronoi cells (~25 at 50 km, scales with area) uniformly distributed across extent
-  → Terrain preset + template → VORONOI_TERRAIN_SCRIPTS + VORONOI_TEMPLATE_SCRIPTS
-    → Parse commands (Land/Hill/Lake/Range/Trough) → processVoronoiCommands
-      → Land: BFS fill from seed cells, with optional noedge or cardinal-direction constraint
-      → Hill: randomly tag land cells or BFS from random start
+  → Terrain preset (pre + post) + template → VORONOI_TERRAIN_SCRIPTS + VORONOI_TEMPLATE_SCRIPTS
+    → Parse commands (Scale/Land/Hill/Lake/Range/Trough) → processVoronoiCommands
+      → Scale: sets terrainScale multiplier for hill/range heightRange (lowland=0.25, highland=1.5, etc.)
+      → Land: BFS fill from seed cells, with optional noedge or cardinal-direction constraint.
+              Each Land command creates an island group. Subsequent Land noedge commands
+              avoid cells adjacent to existing island groups, keeping islands separate.
+      → Hill: randomly tag land cells (pct% of land), sets heightBase=0.25, heightRange=1.25×scale
       → Lake: convert land cells back to water, optionally BFS from random start
       → Range/Trough: walk line between named locations (top/center/bottomleft/random/etc.),
-                       stop at water cells, continue on opposite shore; range tags as high,
-                       trough tags as water
+                       stop at water cells, continue on opposite shore; range tags as high
+                       (heightBase=0.25, heightRange=1.25×scale), trough tags as water
   → Per-point simplex noise (FBM, 6 octaves, persistence 0.5, lacunarity 2.0, baseFreq 2.0, exponent 3)
-  → Height mapping by cell type:
-      Water/lake/trough: -1 + simplex → [-1, 0] (≤ 0 = water)
-      Land:             simplex × 0.5 → [0, 0.5]
-      Hill/range:       0.5 + simplex × heightRange → [0.5, 0.5+heightRange]
-  → Sink fill → rivers → moisture → temperature → biomes (Azgaar 5×26 matrix)
+  → Height mapping by cell type (0 = water boundary):
+      Water/lake/trough: -1 + simplex → [-1, 0]
+      Land:             0.01 + simplex × 0.25 → [0.01, 0.26]
+      Hill:             heightBase + simplex × heightRange → [0.25, 0.25+1.25×scale]
+      Range:            heightBase + simplex × heightRange → [0.25, 0.25+1.25×scale]
+  → Sink fill → rivers → moisture × terrain rainfall multiplier → temperature → biomes (Azgaar 5×26 matrix)
   → Habitability → mountain peaks → feature resolution (cities/towns/resources/ruins/trouble)
 ```
 
@@ -133,10 +138,11 @@ Seed → mulberry32 PRNG → random points scaled by map area (~3K min, ~15-20K 
 | Command | Syntax | Effect |
 | ------- | ------ | ------ |
 | `Land` | `<pct> [constraint]` | Tag `pct`% of cells as land via BFS from random/cardinal-edge seed. `constraint`: `noedge` (interior only) or cardinal direction (`north`/`south`/`east`/`west`/`northeast`/`northwest`/`southeast`/`southwest`). |
-| `Hill` | `<pct> <size> [placement]` | Tag `pct`% of land cells as hill type (height 0.5+). `size` sets simplex scaling. `placement`: `random` (shuffle) or `neighbors` (BFS cluster). |
-| `Lake` | `<pct> <size> [placement]` | Convert `pct`% of land cells back to water. `placement`: `random` or `neighbors` (BFS cluster). |
-| `Range` | `<pct> <size> <start> <stop>` | Walk line from `start` to `stop` (named locations: topleft/top/topright/left/center/right/bottomleft/bottom/bottomright/random). Tag `pct`% of land cells along the line as range (height 0.5+`size`). |
-| `Trough` | `<pct> <size> <start> <stop>` | Same as Range but tags cells as water (drains the line). |
+| `Hill` | `<pct> [placement]` | Tag `pct`% of land cells as hill type (height 0.25+). `placement`: `random` (shuffle) or `neighbors` (BFS cluster). |
+| `Lake` | `<pct> [placement]` | Convert `pct`% of land cells back to water. `placement`: `random` or `neighbors` (BFS cluster). |
+| `Range` | `<pct> <start> <stop>` | Walk line from `start` to `stop` (named locations: topleft/top/topright/left/center/right/bottomleft/bottom/bottomright/random). Tag `pct`% of land cells along the line as range (height 0.25+). |
+| `Trough` | `<pct> <start> <stop>` | Same as Range but tags cells as water (drains the line). |
+| `Scale` | `<multiplier>` | Sets terrainScale multiplier for hill/range heightRange. Applied as heightRange = 1.25 × scale. |
 
 ### Old Pipeline (superseded, code retained)
 
@@ -150,7 +156,7 @@ The old pipeline (`generateSimplexBase` + `processTerrainCommands` + `IslandMask
 ### Shared Pipeline (same for both old and new)
 
 - **PRNG**: Mulberry32 (embedded in `terrain/terrain.js`), seeded from `seedFromString()` via `prng.js`
-- **Triangulation**: Delaunator — points scale with map area (3K minimum, ~15–20K at 320 km, ~23–31K at 400 km) → indexed triangle mesh
+- **Triangulation**: d3-delaunay — points scale with map area (3K minimum, ~15–20K at 320 km, ~23–31K at 400 km) → indexed triangle mesh
 - **Rivers**: Downhill flow accumulation on the Delaunay graph (`computeRivers()`). Land points start with unit flow, accumulate downhill via sorted height traversal. Points in the top 10% of accumulated flow become river channels. River segments follow downhill edges between river points and are rendered as flat blue quads (width ∝ √flux).
 - **Moisture**: Azgaar-style two-phase computation. Phase A: BFS from rivers (10), ocean (8), and coast-adjacent land (7) with exponential decay (0.94× per hop inland). Phase B: neighbor averaging with river flux bonus.
 - **Temperature**: Base temp ±0.5°C latitudinal gradient with elevation lapse rate (−10°C max). Mapped to 26-band scale: `tempBand = round(clamp(20 − t, 0, 25))`.

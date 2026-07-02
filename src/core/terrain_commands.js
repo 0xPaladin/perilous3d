@@ -1,10 +1,3 @@
-import { findCellForPoint } from './voronoi.js';
-
-/**
- * Parse and execute voronoi-based terrain commands.
- * Commands tag cells with types: land, water, hill, lake, range, trough.
- */
-
 const CARDINAL_DIRS = {
   north: { axis: 'z', sign: 1, label: 'north' },
   south: { axis: 'z', sign: -1, label: 'south' },
@@ -32,8 +25,8 @@ function parseNamedLocation(str) {
   return CORNER_LOCATIONS[str.toLowerCase()] || null;
 }
 
-function isEdgeCell(idx, hullSet) {
-  return hullSet.has(idx);
+function isEdgeCell(idx, edgeSet) {
+  return edgeSet.has(idx);
 }
 
 function cardinalFilter(cellX, cellZ, dir, extent) {
@@ -72,7 +65,7 @@ function bfsFill(startIdx, targetCount, cells, adj, validFn) {
 
 function isLand(cell) { return cell.type === 'land' || cell.type === 'hill' || cell.type === 'range'; }
 
-function lineCellsBetween(startLoc, stopLoc, cells, centroids, extent) {
+function lineCellsBetween(startLoc, stopLoc, cells, centroids, extent, cellDelaunay) {
   const sw = extent.width / 2;
   const sh = extent.height / 2;
   const sx = startLoc.nx * sw;
@@ -91,7 +84,7 @@ function lineCellsBetween(startLoc, stopLoc, cells, centroids, extent) {
     const t = i / nSteps;
     const px = sx + dx * t;
     const pz = sz + dz * t;
-    const ci = findCellForPoint(px, pz, centroids);
+    const ci = cellDelaunay.find(px, pz);
     if (!visited.has(ci)) {
       visited.add(ci);
       result.push(ci);
@@ -104,13 +97,11 @@ function lineCellsBetween(startLoc, stopLoc, cells, centroids, extent) {
  * Process a list of voronoi command strings against voronoi cells.
  * Mutates cells in place, setting type, heightBase, and heightRange.
  */
-export function processVoronoiCommands(commands, cells, centroids, adj, hullSet, rng, extent) {
+export function processVoronoiCommands(commands, cells, centroids, adj, edgeSet, rng, extent, cellDelaunay) {
   const n = cells.length;
 
-  // Track which cells are land-candidates for hill/lake tagging
   const totalCells = n;
 
-  // Sort edge cells by cardinal direction score for Land with cardinal constraint
   function cellDirScore(idx, dir) {
     const [cx, cz] = centroids[idx];
     if (dir.axis === 'xz') {
@@ -121,8 +112,27 @@ export function processVoronoiCommands(commands, cells, centroids, adj, hullSet,
     return 0;
   }
 
+  const islandGroups = [];
+  let terrainScale = 1.0;
+
+  // Build a set of all cells belonging to any existing island group plus their immediate neighbors
+  function buildOccupiedSet(groups) {
+    const occ = new Uint8Array(n);
+    for (const g of groups) {
+      for (const ci of g) {
+        occ[ci] = 1;
+        for (const nb of adj[ci]) occ[nb] = 1;
+      }
+    }
+    return occ;
+  }
+
   for (const cmd of commands) {
     switch (cmd.type) {
+      case 'scale': {
+        terrainScale = cmd.val;
+        break;
+      }
       case 'land': {
         const targetCount = Math.round(cmd.pct * n);
         let seeds = [];
@@ -150,15 +160,28 @@ export function processVoronoiCommands(commands, cells, centroids, adj, hullSet,
               seeds.push(fi);
             }
           }
+          islandGroups.push(seeds.slice(0, targetCount));
         } else if (cmd.constraint === 'noedge') {
+          const occupied = buildOccupiedSet(islandGroups);
+
+          let centerIdx = 0;
+          let centerDistSq = Infinity;
+          for (let i = 0; i < n; i++) {
+            const [cx, cz] = centroids[i];
+            const d = cx * cx + cz * cz;
+            if (d < centerDistSq) { centerDistSq = d; centerIdx = i; }
+          }
+
           const candidates = [];
           for (let i = 0; i < n; i++) {
-            if (!isEdgeCell(i, hullSet)) {
+            if (!isEdgeCell(i, edgeSet) && !occupied[i]) {
               candidates.push(i);
             }
           }
           if (candidates.length > 0) {
-            const startIdx = candidates[Math.floor(rng() * candidates.length)];
+            const startIdx = (candidates.includes(centerIdx) && cells[centerIdx].type !== 'land')
+              ? centerIdx
+              : candidates[Math.floor(rng() * candidates.length)];
             cells[startIdx].type = 'land';
             const candidateSet = new Set(candidates);
             const target = Math.max(1, Math.min(targetCount, candidates.length));
@@ -180,7 +203,8 @@ export function processVoronoiCommands(commands, cells, centroids, adj, hullSet,
             for (const fi of tagged) {
               cells[fi].type = 'land';
             }
-           }
+            islandGroups.push(tagged);
+          }
         } else {
           const startIdx = Math.floor(rng() * n);
           cells[startIdx].type = 'land';
@@ -189,6 +213,7 @@ export function processVoronoiCommands(commands, cells, centroids, adj, hullSet,
           for (const fi of filled) {
             cells[fi].type = 'land';
           }
+          islandGroups.push(filled);
         }
         break;
       }
@@ -204,15 +229,15 @@ export function processVoronoiCommands(commands, cells, centroids, adj, hullSet,
         if (cmd.placement === 'neighbors') {
           const start = landCells[Math.floor(rng() * landCells.length)];
           cells[start].type = 'hill';
-          cells[start].heightBase = 0.5;
-          cells[start].heightRange = cmd.size * (0.5 + rng());
+          cells[start].heightBase = 0.25;
+          cells[start].heightRange = 1.25 * terrainScale;
           tagged.push(start);
           const filled = bfsFill(start, targetCount - 1, cells, adj,
             (i) => isLand(cells[i]) && cells[i].type !== 'hill');
           for (const fi of filled) {
             cells[fi].type = 'hill';
-            cells[fi].heightBase = 0.5;
-            cells[fi].heightRange = cmd.size * (0.5 + rng());
+            cells[fi].heightBase = 0.25;
+            cells[fi].heightRange = 1.25 * terrainScale;
             tagged.push(fi);
           }
         } else {
@@ -220,8 +245,8 @@ export function processVoronoiCommands(commands, cells, centroids, adj, hullSet,
           for (let k = 0; k < Math.min(targetCount, shuffled.length); k++) {
             const ci = shuffled[k];
             cells[ci].type = 'hill';
-            cells[ci].heightBase = 0.5;
-            cells[ci].heightRange = cmd.size * (0.5 + rng());
+            cells[ci].heightBase = 0.25;
+            cells[ci].heightRange = 1.25 * terrainScale;
             tagged.push(ci);
           }
         }
@@ -271,7 +296,7 @@ export function processVoronoiCommands(commands, cells, centroids, adj, hullSet,
         const stopLoc = parseNamedLocation(cmd.stop);
         if (!startLoc || !stopLoc) break;
 
-        const pathCells = lineCellsBetween(startLoc, stopLoc, cells, centroids, extent);
+        const pathCells = lineCellsBetween(startLoc, stopLoc, cells, centroids, extent, cellDelaunay);
         const traverseCount = Math.max(1, Math.round(cmd.pct * pathCells.length));
         let traversed = 0;
 
@@ -285,8 +310,8 @@ export function processVoronoiCommands(commands, cells, centroids, adj, hullSet,
               cells[ci].heightRange = 1;
             } else {
               cells[ci].type = 'range';
-              cells[ci].heightBase = 0.5;
-              cells[ci].heightRange = cmd.size * (0.5 + rng());
+              cells[ci].heightBase = 0.25;
+              cells[ci].heightRange = 1.25 * terrainScale;
             }
             traversed++;
           }
@@ -295,4 +320,6 @@ export function processVoronoiCommands(commands, cells, centroids, adj, hullSet,
       }
     }
   }
+
+  return { islandGroups };
 }
