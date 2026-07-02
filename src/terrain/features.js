@@ -366,10 +366,11 @@ function generateCellAssignments(rng, cells, cellAdj, cityCount, areaRatio) {
     assignments.cities = pickN(landCells, n);
   }
 
-  // Towns: land/hill cells, 3 per city
+  // Towns: 4 standalone when no cities, else 3 per city
   const usedForCities = new Set(assignments.cities);
   const remainingLand = landCells.filter(c => !usedForCities.has(c));
-  assignments.towns = pickN(remainingLand, assignments.cities.length * 3);
+  const townCount = assignments.cities.length > 0 ? assignments.cities.length * 3 : 4;
+  assignments.towns = pickN(remainingLand, townCount);
 
   // Resources: any cells
   assignments.resources = pickN(allCells, Math.max(2, Math.round(cityCount * areaRatio)));
@@ -454,7 +455,7 @@ function placeResourcesInCells(assignedCells, pts, h, waterLevel, biome, maxLand
 
 // ---- Cell-based city/town/ruin placement ----
 
-function placeCitiesInCells(assignedCells, pts, h, waterLevel, habitability, nearWater, nearResource, cellPoints, cellAdj) {
+function placeCitiesInCells(assignedCells, pts, h, waterLevel, habitability, nearWater, nearResource, maxLandH, cellPoints, cellAdj) {
   if (assignedCells.length === 0) return [];
   const cities = [];
 
@@ -464,7 +465,7 @@ function placeCitiesInCells(assignedCells, pts, h, waterLevel, habitability, nea
       if (habitability[idx] <= 0) return -1;
       return habitability[idx] + (nearWater[idx] ? 20 : 0) + (nearResource ? nearResource[idx] ? 15 : 0 : 0);
     };
-    const filter = (idx) => h[idx] > waterLevel && habitability[idx] > 0;
+    const filter = (idx) => h[idx] > waterLevel && habitability[idx] > 0 && (h[idx] - waterLevel) / maxLandH <= 0.6;
 
     const best = bestPointInCellOrNeighbors(cellIdx, cellPoints, pts, cellAdj, scorer, filter);
     if (best) {
@@ -475,7 +476,7 @@ function placeCitiesInCells(assignedCells, pts, h, waterLevel, habitability, nea
   return cities;
 }
 
-function placeTownsInCells(assignedCells, pts, h, waterLevel, habitability, nearWater, nearResource, cellPoints, cellAdj) {
+function placeTownsInCells(assignedCells, pts, h, waterLevel, habitability, nearWater, nearResource, maxLandH, cellPoints, cellAdj) {
   const towns = [];
 
   for (const cellIdx of assignedCells) {
@@ -484,7 +485,7 @@ function placeTownsInCells(assignedCells, pts, h, waterLevel, habitability, near
       if (habitability[idx] <= 0) return -1;
       return habitability[idx] + (nearWater[idx] ? 20 : 0) + (nearResource ? nearResource[idx] ? 15 : 0 : 0);
     };
-    const filter = (idx) => h[idx] > waterLevel && habitability[idx] > 0;
+    const filter = (idx) => h[idx] > waterLevel && habitability[idx] > 0 && (h[idx] - waterLevel) / maxLandH <= 0.6;
 
     const best = bestPointInCellOrNeighbors(cellIdx, cellPoints, pts, cellAdj, scorer, filter);
     if (best) {
@@ -495,7 +496,7 @@ function placeTownsInCells(assignedCells, pts, h, waterLevel, habitability, near
   return towns;
 }
 
-function placeRuinsInCells(assignedCells, pts, h, waterLevel, habitability, cellPoints, cellAdj, rng) {
+function placeRuinsInCells(assignedCells, pts, h, waterLevel, habitability, maxLandH, cellPoints, cellAdj, rng) {
   const ruins = [];
 
   for (const cellIdx of assignedCells) {
@@ -503,7 +504,7 @@ function placeRuinsInCells(assignedCells, pts, h, waterLevel, habitability, cell
       if (h[idx] <= waterLevel) return -1;
       return habitability[idx] + rng() * 10;
     };
-    const filter = (idx) => h[idx] > waterLevel && habitability[idx] > 0;
+    const filter = (idx) => h[idx] > waterLevel && habitability[idx] > 0 && (h[idx] - waterLevel) / maxLandH <= 0.6;
 
     const best = bestPointInCellOrNeighbors(cellIdx, cellPoints, pts, cellAdj, scorer, filter);
     if (best) {
@@ -577,9 +578,9 @@ export function resolveFeatures({
   // Phase 2: Place resources, cities, towns, ruins, trouble
   const resources = placeResourcesInCells(assignments.resources, pts, h, waterLevel, biome, maxLandH, cellPoints, cellAdj, seed ^ 0xBABE);
   const nearResource = computeNearResource(pts, resources, 15);
-  const cities = placeCitiesInCells(assignments.cities, pts, h, waterLevel, habitability, nearWater, nearResource, cellPoints, cellAdj);
-  const towns = placeTownsInCells(assignments.towns, pts, h, waterLevel, habitability, nearWater, nearResource, cities, cellPoints, cellAdj);
-  const ruins = placeRuinsInCells(assignments.ruins, pts, h, waterLevel, habitability, cellPoints, cellAdj, rng);
+  const cities = placeCitiesInCells(assignments.cities, pts, h, waterLevel, habitability, nearWater, nearResource, maxLandH, cellPoints, cellAdj);
+  const towns = placeTownsInCells(assignments.towns, pts, h, waterLevel, habitability, nearWater, nearResource, maxLandH, cellPoints, cellAdj);
+  const ruins = placeRuinsInCells(assignments.ruins, pts, h, waterLevel, habitability, maxLandH, cellPoints, cellAdj, rng);
   const minorRuins = placeMinorRuinsInCells(assignments.minorRuins, pts, h, waterLevel, cellPoints, cellAdj, rng);
   const trouble = placeTroubleInCells(assignments.trouble, pts, h, waterLevel, habitability, cellPoints, cellAdj, rng);
 
