@@ -1,5 +1,5 @@
 import { createRng } from './terrain.js';
-import { TROUBLE_TYPES, RESOURCE_TYPES, RESOURCE_BIOME_WEIGHT, FEATURE_TERRAIN_TYPES, MAGIC_TYPES, ELEMENTS, FACTION_TYPES, PRIMARY_GOALS, CONDITIONS, PLACE_NAMES, PLACE_ADJECTIVES, PLACE_NOUNS, SITE_LAIR_TYPES, SITE_RUIN_TYPES, SITE_OUTPOST_TYPES, SITE_LANDMARK_TYPES, SITE_RESOURCE_TYPES } from './config.js';
+import { TROUBLE_TYPES, RESOURCE_TYPES, RESOURCE_BIOME_WEIGHT, MAGIC_TYPES, ELEMENTS, FACTION_TYPES, PRIMARY_GOALS, CONDITIONS, PLACE_NAMES, PLACE_ADJECTIVES, PLACE_NOUNS, SITE_LAIR_TYPES, SITE_RUIN_TYPES, SITE_OUTPOST_TYPES, SITE_LANDMARK_TYPES, SITE_RESOURCE_TYPES } from './config.js';
 
 function d(rng, sides) {
   return Math.floor(rng() * sides) + 1;
@@ -13,57 +13,8 @@ function rollIndex(rng, sides) {
   return d(rng, sides) - 1;
 }
 
-function rollFeatureTerrain(rng) {
-  return pick(FEATURE_TERRAIN_TYPES, rng);
-}
 
-//Terrain Compatibility
-export function hazardCompatibleWithTerrain(terrain, hazard) {
-  if (terrain === 'land') return true;
-  if (hazard.category === 'unnatural') return true;
-  const type = hazard.type;
-  const compat = {
-    mountains: ['tectonic/volcanic', 'precipitous', 'seasonal'],
-    hills: ['oddity-based', 'defensive'],
-    forest: ['ensnaring', 'defensive', 'seasonal'],
-    river: ['ensnaring', 'seasonal'],
-    water: ['ensnaring'],
-  };
-  const list = compat[terrain] || [];
-  return list.some(k => type.startsWith(k));
-}
-
-export function obstacleCompatibleWithTerrain(terrain, obstacle) {
-  if (terrain === 'land') return true;
-  if (obstacle.category === 'unnatural') return true;
-  const type = obstacle.type;
-  const compat = {
-    mountains: ['impenetrable', 'traversable'],
-    hills: ['oddity-based', 'traversable'],
-    forest: ['penetrable', 'defensive'],
-    river: ['traversable'],
-    water: ['traversable'],
-  };
-  const list = compat[terrain] || [];
-  return list.some(k => type.startsWith(k));
-}
-
-export function areaCompatibleWithTerrain(terrain, area) {
-  if (terrain === 'land') return true;
-  if (area.category === 'unnatural') return true;
-  const type = area.type;
-  const compat = {
-    mountains: ['obstacle-based', 'difficult terrain'],
-    hills: ['oddity-based', 'hunting/gathering'],
-    forest: ['difficult terrain', 'hunting/gathering', 'claimed as territory'],
-    river: ['obstacle-based'],
-    water: ['claimed as territory'],
-  };
-  const list = compat[terrain] || [];
-  return list.some(k => type.startsWith(k));
-}
-
-export function computeNearResource(pts, resources, radiusKm) {
+function computeNearResource(pts, resources, radiusKm) {
   const near = new Uint8Array(pts.length);
   const rSq = radiusKm * radiusKm;
   for (const res of resources) {
@@ -505,7 +456,6 @@ function placeResourcesInCells(assignedCells, pts, h, waterLevel, biome, maxLand
 
 function placeCitiesInCells(assignedCells, pts, h, waterLevel, habitability, nearWater, nearResource, cellPoints, cellAdj) {
   if (assignedCells.length === 0) return [];
-  const MIN_DIST_SQ = 32 * 32;
   const cities = [];
 
   for (const cellIdx of assignedCells) {
@@ -517,14 +467,7 @@ function placeCitiesInCells(assignedCells, pts, h, waterLevel, habitability, nea
     const filter = (idx) => h[idx] > waterLevel && habitability[idx] > 0;
 
     const best = bestPointInCellOrNeighbors(cellIdx, cellPoints, pts, cellAdj, scorer, filter);
-    if (!best) continue;
-
-    let ok = true;
-    for (const city of cities) {
-      const dx = best.x - city.x, dz = best.z - city.z;
-      if (dx * dx + dz * dz < MIN_DIST_SQ) { ok = false; break; }
-    }
-    if (ok) {
+    if (best) {
       cities.push({ x: best.x, z: best.z, idx: best.idx, habitability: best.score });
     }
   }
@@ -532,8 +475,7 @@ function placeCitiesInCells(assignedCells, pts, h, waterLevel, habitability, nea
   return cities;
 }
 
-function placeTownsInCells(assignedCells, pts, h, waterLevel, habitability, nearWater, nearResource, cities, cellPoints, cellAdj) {
-  const MIN_DIST_SQ = 25 * 25;
+function placeTownsInCells(assignedCells, pts, h, waterLevel, habitability, nearWater, nearResource, cellPoints, cellAdj) {
   const towns = [];
 
   for (const cellIdx of assignedCells) {
@@ -545,93 +487,49 @@ function placeTownsInCells(assignedCells, pts, h, waterLevel, habitability, near
     const filter = (idx) => h[idx] > waterLevel && habitability[idx] > 0;
 
     const best = bestPointInCellOrNeighbors(cellIdx, cellPoints, pts, cellAdj, scorer, filter);
-    if (!best) continue;
-
-    let ok = true;
-    for (const s of [...cities, ...towns]) {
-      const dx = best.x - s.x, dz = best.z - s.z;
-      if (dx * dx + dz * dz < MIN_DIST_SQ) { ok = false; break; }
+    if (best) {
+      towns.push({ x: best.x, z: best.z, idx: best.idx, habitability: best.score });
     }
-    if (ok) towns.push({ x: best.x, z: best.z, idx: best.idx, habitability: best.score });
   }
 
   return towns;
 }
 
-function placeRuinsInCells(assignedCells, pts, h, waterLevel, habitability, cities, towns, cellPoints, cellAdj, rng) {
-  const MIN_DIST_SQ = 30 * 30;
+function placeRuinsInCells(assignedCells, pts, h, waterLevel, habitability, cellPoints, cellAdj, rng) {
   const ruins = [];
-
-  const occupied = (x, z) => {
-    for (const s of [...cities, ...towns]) {
-      const dx = x - s.x, dz = z - s.z;
-      if (dx * dx + dz * dz < MIN_DIST_SQ * 2) return true;
-    }
-    return false;
-  };
 
   for (const cellIdx of assignedCells) {
     const scorer = (idx) => {
       if (h[idx] <= waterLevel) return -1;
-      if (occupied(pts[idx][0], pts[idx][1])) return -1;
       return habitability[idx] + rng() * 10;
     };
-    const filter = (idx) => {
-      if (h[idx] <= waterLevel) return false;
-      const x = pts[idx][0], z = pts[idx][1];
-      return !occupied(x, z);
-    };
+    const filter = (idx) => h[idx] > waterLevel && habitability[idx] > 0;
 
     const best = bestPointInCellOrNeighbors(cellIdx, cellPoints, pts, cellAdj, scorer, filter);
-    if (!best) continue;
-
-    let ok = true;
-    for (const r of ruins) {
-      const dx = best.x - r.x, dz = best.z - r.z;
-      if (dx * dx + dz * dz < MIN_DIST_SQ) { ok = false; break; }
+    if (best) {
+      ruins.push({ x: best.x, z: best.z, idx: best.idx, habitability: best.score, name: generatePlaceName(rng) });
     }
-    if (ok) ruins.push({ x: best.x, z: best.z, idx: best.idx, habitability: best.score, name: generatePlaceName(rng) });
   }
 
   return ruins;
 }
 
 function placeMinorRuinsInCells(assignedCells, pts, h, waterLevel, cellPoints, cellAdj, rng) {
-  const MIN_DIST_SQ = 20 * 20;
   const minorRuins = [];
 
   for (const cellIdx of assignedCells) {
     const filter = (idx) => h[idx] > waterLevel;
     const best = randomPointInCellOrNeighbors(cellIdx, cellPoints, pts, cellAdj, filter, rng);
-    if (!best) continue;
-
-    let ok = true;
-    for (const r of minorRuins) {
-      const dx = best.x - r.x, dz = best.z - r.z;
-      if (dx * dx + dz * dz < MIN_DIST_SQ) { ok = false; break; }
+    if (best) {
+      minorRuins.push({ x: best.x, z: best.z, idx: best.idx, name: generatePlaceName(rng) });
     }
-    if (ok) minorRuins.push({ x: best.x, z: best.z, idx: best.idx, name: generatePlaceName(rng) });
   }
 
   return minorRuins;
 }
 
-function placeTroubleInCells(assignedCells, pts, h, waterLevel, habitability, cities, towns, cellPoints, cellAdj, rng) {
+function placeTroubleInCells(assignedCells, pts, h, waterLevel, habitability, cellPoints, cellAdj, rng) {
   const trouble = [];
-  const MIN_DIST_SQ = 36 * 36;
-
-  function addTrouble(x, z, idx, type) {
-    for (const s of [...cities, ...towns]) {
-      const dx = x - s.x, dz = z - s.z;
-      if (dx * dx + dz * dz < 15 * 15) return false;
-    }
-    for (const t of trouble) {
-      const dx = x - t.x, dz = z - t.z;
-      if (dx * dx + dz * dz < MIN_DIST_SQ) return false;
-    }
-    trouble.push({ x, z, idx, type });
-    return true;
-  }
 
   for (const cellIdx of assignedCells) {
     const scorer = (idx) => {
@@ -642,7 +540,7 @@ function placeTroubleInCells(assignedCells, pts, h, waterLevel, habitability, ci
 
     const best = bestPointInCellOrNeighbors(cellIdx, cellPoints, pts, cellAdj, scorer, filter);
     if (best) {
-      addTrouble(best.x, best.z, best.idx, pick(TROUBLE_TYPES, rng));
+      trouble.push({ x: best.x, z: best.z, idx: best.idx, type: pick(TROUBLE_TYPES, rng) });
     }
   }
 
@@ -650,50 +548,6 @@ function placeTroubleInCells(assignedCells, pts, h, waterLevel, habitability, ci
 }
 
 // ---- Feature-style placement helpers (hazard/obstacle/area compatible with terrain) ----
-
-function findCellsByTerrain(terrain, pts, heights, waterLevel, biome, rivers, maxLandH) {
-  const cells = [];
-  let maxFlux = 0;
-  for (let i = 0; i < pts.length; i++) if (rivers.flux[i] > maxFlux) maxFlux = rivers.flux[i];
-  if (maxFlux === 0) maxFlux = 1;
-  const riverThreshold = maxFlux * 0.1;
-
-  for (let i = 0; i < pts.length; i++) {
-    const h = heights[i];
-    if (h <= waterLevel) {
-      if (terrain === 'water') cells.push(i);
-      continue;
-    }
-    const normH = Math.min((h - waterLevel) / maxLandH, 1.0);
-    if (terrain === 'mountains') {
-      if (normH > 0.35) cells.push(i);
-    } else if (terrain === 'hills') {
-      if (normH >= 0.15 && normH <= 0.35) cells.push(i);
-    } else if (terrain === 'forest') {
-      if (biome && [5, 6, 7, 8, 9].includes(biome[i])) cells.push(i);
-    } else if (terrain === 'river') {
-      if (rivers.flux[i] > riverThreshold) cells.push(i);
-    } else if (terrain === 'land') {
-      const isMountains = normH > 0.35;
-      const isHills = normH >= 0.15 && normH <= 0.35;
-      const isForest = biome && [5, 6, 7, 8, 9].includes(biome[i]);
-      const isRiver = rivers.flux[i] > riverThreshold;
-      if (!isMountains && !isHills && !isForest && !isRiver) cells.push(i);
-    }
-  }
-  return cells;
-}
-
-function findNeighborCells(idx, adj, pts, maxDistKm) {
-  const maxDistSq = maxDistKm * maxDistKm;
-  const nbs = [];
-  for (const j of adj[idx]) {
-    const dx = pts[idx][0] - pts[j][0];
-    const dz = pts[idx][1] - pts[j][1];
-    if (dx * dx + dz * dz <= maxDistSq) nbs.push(j);
-  }
-  return nbs;
-}
 
 export function resolveFeatures({
   rng,
@@ -725,9 +579,9 @@ export function resolveFeatures({
   const nearResource = computeNearResource(pts, resources, 15);
   const cities = placeCitiesInCells(assignments.cities, pts, h, waterLevel, habitability, nearWater, nearResource, cellPoints, cellAdj);
   const towns = placeTownsInCells(assignments.towns, pts, h, waterLevel, habitability, nearWater, nearResource, cities, cellPoints, cellAdj);
-  const ruins = placeRuinsInCells(assignments.ruins, pts, h, waterLevel, habitability, cities, towns, cellPoints, cellAdj, rng);
+  const ruins = placeRuinsInCells(assignments.ruins, pts, h, waterLevel, habitability, cellPoints, cellAdj, rng);
   const minorRuins = placeMinorRuinsInCells(assignments.minorRuins, pts, h, waterLevel, cellPoints, cellAdj, rng);
-  const trouble = placeTroubleInCells(assignments.trouble, pts, h, waterLevel, habitability, cities, towns, cellPoints, cellAdj, rng);
+  const trouble = placeTroubleInCells(assignments.trouble, pts, h, waterLevel, habitability, cellPoints, cellAdj, rng);
 
   // Phase 3: Generate narrative features
   const features = generateFeatures(cityCount, extentSize, rng);
@@ -853,142 +707,83 @@ export function resolveFeatures({
       }
     } else if (f.type === 'hazard') {
       const cellIdx = Math.floor(rng() * nCells);
-      let terrain, foundCell = null;
-      for (let attempt = 0; attempt < 10; attempt++) {
-        terrain = rollFeatureTerrain(rng);
-        const terrainCells = findCellsByTerrain(terrain, pts, h, waterLevel, biome, rivers, maxLandH);
-        if (terrainCells.length === 0) continue;
-        // Try points in the assigned cell first, then neighbors
-        const visited = new Set([cellIdx]);
-        const queue = [cellIdx];
-        while (queue.length > 0) {
-          const ci = queue.shift();
-          visited.add(ci);
-          const indices = cellPoints[ci];
-          const shuffled = indices.slice().sort(() => rng() - 0.5);
-          for (const idx of shuffled) {
-            if (!terrainCells.includes(idx)) continue;
-            const x = pts[idx][0], z = pts[idx][1];
-            let ok = true;
-            for (const s of [...cities, ...towns]) {
-              const dx = x - s.x, dz = z - s.z;
-              if (dx * dx + dz * dz < 15 * 15) { ok = false; break; }
-            }
-            for (const hz of hazards) {
-              const dx = x - hz.x, dz = hz.z - z;
-              if (dx * dx + dz * dz < 10 * 10) { ok = false; break; }
-            }
-            if (ok && hazardCompatibleWithTerrain(terrain, f.hazard)) {
-              foundCell = { idx, x, z };
-              break;
-            }
-          }
-          if (foundCell) break;
-          for (const nb of (cellAdj[ci] || [])) {
-            if (!visited.has(nb)) queue.push(nb);
-          }
+      const visited = new Set([cellIdx]);
+      const queue = [cellIdx];
+      let foundCell = null;
+      while (queue.length > 0) {
+        const ci = queue.shift();
+        if (visited.has(ci)) continue;
+        visited.add(ci);
+        const indices = cellPoints[ci];
+        const shuffled = indices.slice().sort(() => rng() - 0.5);
+        for (const idx of shuffled) {
+          if (h[idx] <= waterLevel) continue;
+          const x = pts[idx][0], z = pts[idx][1];
+          foundCell = { idx, x, z };
+          break;
         }
         if (foundCell) break;
+        for (const nb of (cellAdj[ci] || [])) {
+          if (!visited.has(nb)) queue.push(nb);
+        }
       }
       if (foundCell) {
-        f.regionWide = false;
-        hazards.push({ x: foundCell.x, z: foundCell.z, idx: foundCell.idx, type: f.hazard.type, terrain });
-        f.site = { x: foundCell.x, z: foundCell.z, idx: foundCell.idx, terrain };
+        hazards.push({ x: foundCell.x, z: foundCell.z, idx: foundCell.idx, type: f.hazard.type });
+        f.site = { x: foundCell.x, z: foundCell.z, idx: foundCell.idx };
       } else {
         f.regionWide = true;
       }
     } else if (f.type === 'obstacle') {
       const cellIdx = Math.floor(rng() * nCells);
-      let terrain, foundCell = null;
-      for (let attempt = 0; attempt < 10; attempt++) {
-        terrain = rollFeatureTerrain(rng);
-        const terrainCells = findCellsByTerrain(terrain, pts, h, waterLevel, biome, rivers, maxLandH);
-        if (terrainCells.length === 0) continue;
-        const visited = new Set([cellIdx]);
-        const queue = [cellIdx];
-        while (queue.length > 0) {
-          const ci = queue.shift();
-          visited.add(ci);
-          const indices = cellPoints[ci];
-          const shuffled = indices.slice().sort(() => rng() - 0.5);
-          for (const idx of shuffled) {
-            if (!terrainCells.includes(idx)) continue;
-            const x = pts[idx][0], z = pts[idx][1];
-            let ok = true;
-            for (const s of [...cities, ...towns]) {
-              const dx = x - s.x, dz = z - s.z;
-              if (dx * dx + dz * dz < 15 * 15) { ok = false; break; }
-            }
-            for (const ob of obstacles) {
-              const dx = x - ob.x, dz = z - ob.z;
-              if (dx * dx + dz * dz < 10 * 10) { ok = false; break; }
-            }
-            if (ok && obstacleCompatibleWithTerrain(terrain, f.obstacle)) {
-              foundCell = { idx, x, z };
-              break;
-            }
-          }
-          if (foundCell) break;
-          for (const nb of (cellAdj[ci] || [])) {
-            if (!visited.has(nb)) queue.push(nb);
-          }
+      const visited = new Set([cellIdx]);
+      const queue = [cellIdx];
+      let foundCell = null;
+      while (queue.length > 0) {
+        const ci = queue.shift();
+        if (visited.has(ci)) continue;
+        visited.add(ci);
+        const indices = cellPoints[ci];
+        const shuffled = indices.slice().sort(() => rng() - 0.5);
+        for (const idx of shuffled) {
+          if (h[idx] <= waterLevel) continue;
+          const x = pts[idx][0], z = pts[idx][1];
+          foundCell = { idx, x, z };
+          break;
         }
         if (foundCell) break;
+        for (const nb of (cellAdj[ci] || [])) {
+          if (!visited.has(nb)) queue.push(nb);
+        }
       }
       if (foundCell) {
-        obstacles.push({ x: foundCell.x, z: foundCell.z, idx: foundCell.idx, type: f.obstacle.type, terrain });
-        f.site = { x: foundCell.x, z: foundCell.z, idx: foundCell.idx, terrain };
+        obstacles.push({ x: foundCell.x, z: foundCell.z, idx: foundCell.idx, type: f.obstacle.type });
+        f.site = { x: foundCell.x, z: foundCell.z, idx: foundCell.idx };
       }
     } else if (f.type === 'area') {
       const cellIdx = Math.floor(rng() * nCells);
-      let terrain, foundCell = null, neighborCells = [];
-      for (let attempt = 0; attempt < 10; attempt++) {
-        terrain = rollFeatureTerrain(rng);
-        const terrainCells = findCellsByTerrain(terrain, pts, h, waterLevel, biome, rivers, maxLandH);
-        if (terrainCells.length === 0) continue;
-        const visited = new Set([cellIdx]);
-        const queue = [cellIdx];
-        while (queue.length > 0) {
-          const ci = queue.shift();
-          visited.add(ci);
-          const indices = cellPoints[ci];
-          const shuffled = indices.slice().sort(() => rng() - 0.5);
-          for (const idx of shuffled) {
-            if (!terrainCells.includes(idx)) continue;
-            const x = pts[idx][0], z = pts[idx][1];
-            let ok = true;
-            for (const s of [...cities, ...towns]) {
-              const dx = x - s.x, dz = z - s.z;
-              if (dx * dx + dz * dz < 15 * 15) { ok = false; break; }
-            }
-            for (const a of areas) {
-              const dx = x - a.x, dz = z - a.z;
-              if (dx * dx + dz * dz < 10 * 10) { ok = false; break; }
-            }
-            if (ok && areaCompatibleWithTerrain(terrain, f.area)) {
-              const nbs = findNeighborCells(idx, adj, pts, 3);
-              const matchingNeighbors = nbs.filter(n => {
-                for (const s of [...cities, ...towns]) {
-                  const cdx = pts[n][0] - s.x, cdz = pts[n][1] - s.z;
-                  if (cdx * cdx + cdz * cdz < 15 * 15) return false;
-                }
-                return true;
-              });
-              foundCell = { idx, x, z };
-              neighborCells = matchingNeighbors.map(n => ({ idx: n, x: pts[n][0], z: pts[n][1] }));
-              break;
-            }
-          }
-          if (foundCell) break;
-          for (const nb of (cellAdj[ci] || [])) {
-            if (!visited.has(nb)) queue.push(nb);
-          }
+      const visited = new Set([cellIdx]);
+      const queue = [cellIdx];
+      let foundCell = null;
+      while (queue.length > 0) {
+        const ci = queue.shift();
+        if (visited.has(ci)) continue;
+        visited.add(ci);
+        const indices = cellPoints[ci];
+        const shuffled = indices.slice().sort(() => rng() - 0.5);
+        for (const idx of shuffled) {
+          if (h[idx] <= waterLevel) continue;
+          const x = pts[idx][0], z = pts[idx][1];
+          foundCell = { idx, x, z };
+          break;
         }
         if (foundCell) break;
+        for (const nb of (cellAdj[ci] || [])) {
+          if (!visited.has(nb)) queue.push(nb);
+        }
       }
       if (foundCell) {
-        areas.push({ x: foundCell.x, z: foundCell.z, idx: foundCell.idx, neighbors: neighborCells, type: f.area.type, terrain });
-        f.site = { x: foundCell.x, z: foundCell.z, idx: foundCell.idx, neighbors: neighborCells, terrain };
+        areas.push({ x: foundCell.x, z: foundCell.z, idx: foundCell.idx, type: f.area.type });
+        f.site = { x: foundCell.x, z: foundCell.z, idx: foundCell.idx };
       }
     }
   }

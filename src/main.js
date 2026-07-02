@@ -78,7 +78,6 @@ function generate(template, seedStr, terrain, climate, safety, size) {
   url.searchParams.set('template', template);
   url.searchParams.set('seed', seedNum);
   url.searchParams.set('terrain', terrain);
-  url.searchParams.set('temp', baseTemp);
   url.searchParams.set('climate', climate);
   url.searchParams.set('safety', safety);
   url.searchParams.set('size', size);
@@ -137,11 +136,7 @@ function logRegionStats(display, state, params) {
 const urlParams = new URLSearchParams(window.location.search);
 const initialTemplate = urlParams.get('template') || 'island';
 const initialTerrain = urlParams.get('terrain') || 'highland';
-let initialClimate = urlParams.get('climate');
-if (!initialClimate) {
-  const t = urlParams.get('temp') ? parseInt(urlParams.get('temp'), 10) : climateToTemp('Temperate');
-  initialClimate = tempToClimate(t);
-}
+let initialClimate = urlParams.get('climate') || 'Temperate';
 const initialSafety = urlParams.get('safety') ? parseInt(urlParams.get('safety'), 10) : 0;
 const initialSize = urlParams.get('size') ? parseInt(urlParams.get('size'), 10) : 320;
 const initialSeed = urlParams.get('seed') || (Math.random().toString(36).substring(2, 10) + Date.now().toString(36));

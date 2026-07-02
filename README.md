@@ -89,14 +89,14 @@ Seed → mulberry32 PRNG → random points scaled by map area (~3K min, ~15-20K 
   → Sink fill → rivers → moisture × terrain rainfall multiplier → temperature → biomes (Azgaar 5×26 matrix)
     → Habitability (biome × elevation × slope × water proximity, 0–125)
     → Mountain Peaks (glacier biome local maxima, top N by prominence)
-    → Feature resolution (voronoi cell-based: pre-assign to cells → place within cells after biomes)
-    → Cities (top habitability in assigned land/hill cells, ≥32 km apart, coastal-biased)
-    → Towns (assigned cells near cities or standalone, ≥25 km apart, coastal-biased)
+    → Feature resolution (voronoi cell-based: pre-assign features to cells → place within cells after biomes)
+    → Cities (top habitability in assigned land/hill cells, coastal-biased)
+    → Towns (assigned cells near cities or standalone, coastal-biased)
     → Resources (assigned cells, biome-weighted deposits)
-    → Great Ruins (assigned land/hill cells near settlements, ≥30 km apart)
-    → Minor Ruins (assigned cells on land, ≥20 km apart)
-    → Trouble (neighbor cells of resource/settlement cells, ≥15 km from cities/towns)
-    → Features (8+2d8 narrative features, each assigned to a random voronoi cell then resolved)
+    → Great Ruins (assigned land/hill cells near settlements)
+    → Minor Ruins (assigned cells on land)
+    → Trouble (neighbor cells of resource/settlement cells, worst habitability)
+    → Features (8+2d8 narrative features, each assigned to a random voronoi cell then resolved at any land point)
 ```
 
 ### Per-Template Configuration
@@ -179,10 +179,10 @@ Each terrain vertex is scored 0–125 based on:
 - **Coastal bias** (+20 extra for city selection)
 
 ### Cities
-`findCities()` greedily selects sites from the top 20% of habitability scores in each city's assigned voronoi cell (falling back to neighboring cells), shuffled for randomness, with **≥32 km** mutual separation. Coastal cells get an additional +20 score bonus, and resource proximity adds +15 within 15 km.
+`findCities()` greedily selects sites from the top 20% of habitability scores in each city's assigned voronoi cell (falling back to neighboring cells), shuffled for randomness. Coastal cells get an additional +20 score bonus, and resource proximity adds +15 within 15 km.
 
 ### Towns
-`findTowns()` places towns in assigned voronoi cells, with **≥25 km** mutual separation. If cities exist, towns place near their assigned cells; otherwise 4 standalone. Coastal bonus (+20 habitability) and resource proximity (+15 within 15 km) also applied.
+`findTowns()` places towns in assigned voronoi cells. If cities exist, towns place near their assigned cells; otherwise 4 standalone. Coastal bonus (+20 habitability) and resource proximity (+15 within 15 km) also applied.
 
 ### Settlement Rendering
 `buildSettlements()` in `mesh/mesher.js` renders:
@@ -194,7 +194,7 @@ All placed at terrain Y = `rawHeights[idx] × 3.0` (land) or 0.0 (water).
 `buildMeshForests()` skips any forest cluster whose centroid falls within **5 km** of a city or town, and **3 km** of a minor ruin, keeping settlements visually clear of tree cover.
 
 ### Resource Deposits
-`generateResources()` picks **Max(#cities, 2) unique resource types** per region (at least 2), each placed at its biome-weighted best location, with **≥20 km** mutual separation enforced between deposits:
+`generateResources()` picks **Max(#cities, 2) unique resource types** per region (at least 2), each placed at its biome-weighted best location within its assigned voronoi cell:
 - **game/hide/fur** — Savanna, Grassland, Taiga, Tundra
 - **timber/clay** — Temperate deciduous/rainforest, Taiga
 - **herb/spice/dye** — Tropical seasonal/rainforest, Temperate rainforest
@@ -207,21 +207,19 @@ Cities and towns receive a **+15 placement score bonus** when within **15 km** o
 Rendered as **gold octahedrons** (radius 1.2) floating Y = terrain + 2.0 in `buildResources()`.
 
 ### Great Ruins
-Ruins are placed in assigned land/hill voronoi cells near existing settlements, avoiding occupied cells, with **≥30 km** separation between ruins. Rendered as clusters of **broken stone pillars** (gray cylinders of varying heights) in `buildSettlements()`.
+Ruins are placed in assigned land/hill voronoi cells near existing settlements, placed at the best habitability point. Rendered as clusters of **broken stone pillars** (gray cylinders of varying heights) in `buildSettlements()`.
 
 ### Minor Ruins
-Minor ruins are placed in assigned voronoi cells, any land point, with **≥20 km** separation. Rendered as `CylinderGeometry(0.3, 0.4, 3.5)` standing at terrain Y + 1.75.
+Minor ruins are placed in assigned voronoi cells, any land point. Rendered as `CylinderGeometry(0.3, 0.4, 3.5)` standing at terrain Y + 1.75.
 
 ### Trouble
-Trouble places danger markers in trouble-assigned cells (neighbors of resource cells or city/town cells), with all cells ≥15 km from any city or town:
+Trouble places danger markers in trouble-assigned cells (neighbors of resource cells or city/town cells), picking the worst habitability point in each cell:
 - **Resource trouble**: exactly **1 per resource** — placed in neighbor cells of each resource's assigned cell
 - **Safety-scaled extras**: `(3 − safety) × 2 × areaRatio` additional markers (scaled by map area; values shown for default 320 km)
   - **Perilous (0)**: 6 extras (default)
   - **Dangerous (1)**: 4 extras (default)
   - **Unsafe (2)**: 2 extras (default)
   - **Safe (3)**: 0 extras
-  - Half land within **~30 km** of a city/town (worst habitability)
-  - Half land directly on random ruin sites
 
 Rendered as **inverted red pyramids** (`ConeGeometry` rotated π) in `buildTrouble()`.
 
@@ -237,11 +235,11 @@ Rendered as **inverted red pyramids** (`ConeGeometry` rotated π) in `buildTroub
 - **12 Faction Presence**: 1d10 faction type, 1d8 primary goal, 1d6 condition
 - **13+ Settlement**: placeholder for settlement generation
 
-Feature resolution is handled by `resolveFeatures()` in `terrain/features.js` using a two-phase voronoi cell-based approach. Phase 1 assigns each feature to a voronoi cell (cities/towns/ruins/outposts restricted to land/hill cells, everything else to any cell). Phase 2 places each feature at the best qualifying point within its assigned cell, falling back to neighboring cells if needed. Hazard/obstacle/area features find matching terrain cells via cell-localized search with terrain-compatibility filters.
+Feature resolution is handled by `resolveFeatures()` in `terrain/features.js` using a two-phase voronoi cell-based approach. Phase 1 initially pre-assigns each feature to a voronoi cell (cities/towns/ruins/outposts restricted to land/hill cells, everything else to any cell). Phase 2 places each feature at the best qualifying point within its assigned cell, falling back to neighboring cells if needed. Hazard/obstacle/area features are placed at a random land point in their assigned cell (or a neighbor cell) with no terrain-type or distance restrictions.
 
-Outpost → placed in assigned land/hill cell (random land point ≥15 km from cities/towns, tracked for mutual separation). Landmark → `generatePlaceName()` + placed in assigned cell, stored in `region.landmarkSites[]` with name. Named place → 1d2 roll: ruin (pushed to `region.minorRuins[]`) or landmark (pushed to `region.landmarkSites[]`). Lair/dwelling → pushes a trouble marker with type `'lair'` to `region.trouble[]`.
+Outpost → placed in assigned land/hill cell (random land point). Landmark → `generatePlaceName()` + placed in assigned cell, stored in `region.landmarkSites[]` with name. Named place → 1d2 roll: ruin (pushed to `region.minorRuins[]`) or landmark (pushed to `region.landmarkSites[]`). Lair/dwelling → pushes a trouble marker with type `'lair'` to `region.trouble[]`.
 
-Hazard/obstacle/area features roll a terrain type (`land`/`mountains`/`hills`/`forest`/`river`/`water`), filter sub-type against terrain compatibility (checking `hazardCompatibleWithTerrain()` / `obstacleCompatibleWithTerrain()` / `areaCompatibleWithTerrain()`), then find matching points in their assigned cell via cell-localized search across neighbor cells. Meteorological hazards are region-wide (no marker). Area markers include neighbor cells within ~3 km to suggest extent. All placed features enforce ≥15 km from any city or town and ≥10 km from other same-type markers.
+Hazard/obstacle/area features find a land point in their assigned cell (falling back to neighbor cells via BFS). Meteorological hazards are region-wide (no marker). No terrain-type matching, compatibility checks, or distance constraints are enforced — these are narrative prompts for the Judge and placement is unrestricted.
 
 Outpost, landmark, hazard, obstacle, and area data is stored in `region.outpostSites[]`, `region.landmarkSites[]`, `region.hazards[]`, `region.obstacles[]`, `region.areas[]` respectively, and rendered by `buildSiteFeatures()` in `mesh/mesher.js`:
 - **Outpost**: gray stone cylinder + red cone roof tower (`CylinderGeometry(0.4,0.5,0.8)` + `ConeGeometry(0.5,0.3)`)
@@ -295,11 +293,11 @@ No quantile-based sea level cut, no erosion, no coast cleaning, no island mask. 
 
 **Forests** — `buildMeshForests()` in `mesh/mesh_features.js` filters terrain vertices by height (0.06–0.55) against `maxLandH = 1.0`, then applies a biome-index density lookup (`FOREST_DENSITY` array) with a 0.5 survival multiplier. Candidate points are clustered using a centroid-growing algorithm (8 km radius, min 5 per cluster). Each cluster centroid receives an InstancedMesh forest group via `generateForest()` from `mesh/mesh_tree.js`, which varies tree appearance by dominant biome (Taiga: tall trunk, narrow conical canopy, dark green; Rainforest: tall, large round canopy, deep green; Savanna: short trunk, wide flat canopy, yellow-green; Deciduous: medium, round, includes autumn hues).
 
-**Great Ruins** — Ruins are placed in assigned land/hill voronoi cells near existing settlements, avoiding occupied cells and enforcing ≥30 km separation. Rendered as clusters of broken stone pillars in `buildSettlements()`.
+**Great Ruins** — Ruins are placed in assigned land/hill voronoi cells near existing settlements, placed at the best habitability point within each cell. Rendered as clusters of broken stone pillars in `buildSettlements()`.
 
-**Minor Ruins** — Minor ruins are placed in assigned voronoi cells, any land point, spaced ≥20 km apart, count scaled by map area. Rendered as `CylinderGeometry(0.3, 0.4, 3.5)` standing at terrain Y + 1.75.
+**Minor Ruins** — Minor ruins are placed in assigned voronoi cells, any land point, count scaled by map area. Rendered as `CylinderGeometry(0.3, 0.4, 3.5)` standing at terrain Y + 1.75.
 
-**Trouble** — Trouble is placed in cells neighboring resource/city/town assigned cells (all ≥15 km from cities/towns): exactly 1 cell per resource plus safety-scaled extras (scaled by map area) — Perilous=6, Dangerous=4, Unsafe=2, Safe=0 at default 320 km. Rendered as inverted red pyramids (`ConeGeometry` rotated π) in `buildTrouble()`.
+**Trouble** — Trouble is placed in cells neighboring resource/city/town assigned cells, picking the worst habitability point in each cell: exactly 1 cell per resource plus safety-scaled extras (scaled by map area) — Perilous=6, Dangerous=4, Unsafe=2, Safe=0 at default 320 km. Rendered as inverted red pyramids (`ConeGeometry` rotated π) in `buildTrouble()`.
 
 **3D Mountains** — `buildMeshMountains()` in `mesh/mesh_features.js` iterates the `mounts` array from `buildRegion()`. For each mount, if normalized height > 0.65, it generates a mountain tile (scaled XY by `r/3.5`, Y by `r*0.35`), otherwise a hill tile (Y by `r*0.18`). Hills use `HILL_PALETTE` (green) from `mesh/colors.js`, mountains use `HEIGHT_COLORS` (forest→rock→snow). Mountains and hills use `MeshStandardMaterial` with `flatShading: true` and vertex colors. Rendered at Y = 0.0 (base terrain is at Y = `rawHeight × 3.0`).
 

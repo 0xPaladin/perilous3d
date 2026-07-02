@@ -35,13 +35,13 @@ perilous3d/
     │   ├── biomes.js        # Biome pipeline: buildBiomes(h, ctx) − sink fill → temperature → rivers → moisture → biome matrix
     │   │                    # Helpers: downhill, zero, fillSinks, computeTemperature, biomeFromMatrix,
     │   │                    # computeMoisture, computeRivers, computeHabitability
-    │   ├── features.js      # Feature generation + resolution (all feature work):
+    │       ├── features.js      # Feature generation + resolution (all feature work):
     │   │                    # generateFeatures(safety, extentSize, rng) — rolls 8+2d8 narrative features
     │   │                    # resolveFeatures({...}) — voronoi cell-based assignment + placement for
     │   │                    #   cities/towns/ruins/trouble/resources/narrative features/outposts/
     │   │                    #   landmarks/factions/hazards/obstacles/areas
     │   │                    # Exports: resolveFeatures, generateFeatures, generatePlaceName,
-    │   │                    #   computeNearResource, hazard/obstacle/areaCompatibleWithTerrain
+    │   │                    #   computeNearResource
     │   └── coast.js         # Chaikin smoothing (retained, unused by current pipeline)
     ├── mesh/mesher.js    # Delaunay triangles → indexed THREE.BufferGeometry + vertex colors
     │                    #   + river mesh (LineSegments)
@@ -100,7 +100,6 @@ perilous3d/
 | Tune feature resolution logic    | `terrain/features.js` → `resolveFeatures()` — voronoi cell-based assignment; receives cells, cellAdj, cellIndexForPoint, pts, h, biome, habitability, etc. via destructured params                                                                     |
 | Give generated places names      | `terrain/features.js` exports `generatePlaceName(rng)`; `resolveFeatures()` uses it for ruins, landmarks, dungeons, named places                                                           |
 | Generate regional features       | `terrain/features.js` → `generateFeatures(safety, extentSize, rng)` — 8+2d8 rolls of 1d12+safety                                                                                        |
-| Feature terrain compatibility     | `terrain/features.js` exports `hazardCompatibleWithTerrain()`, `obstacleCompatibleWithTerrain()`, `areaCompatibleWithTerrain()`                                                         |
 
 ## Algorithm Notes
 
@@ -160,14 +159,14 @@ The old pipeline (`generateSimplexBase` + `processTerrainCommands` + `IslandMask
 - **Temperature**: Base temp ±0.5°C latitudinal gradient with elevation lapse rate (−10°C max). Mapped to 26-band scale: `tempBand = round(clamp(20 − t, 0, 25))`.
 - **Biomes**: Azgaar 5×26 matrix (5 moisture bands × 26 temperature bands). Overrides: normH ≤ 0 → Marine, normH > 0.80 → Glacier. 13 biomes total.
 - **Habitability**: Biome base × elevation gaussian × slope penalty × water proximity bonus. Scored 0–125.
-- **Cities**: Top habitability land cells, ≥32 km apart, coastal-biased (+20 score).
-- **Towns**: 3 per city ≤30 km radius or 4 standalone, ≥25 km apart, coastal-biased.
+- **Cities**: Top habitability land cells, coastal-biased (+20 score).
+- **Towns**: 3 per city ≤30 km radius or 4 standalone, coastal-biased.
 - **Resources**: Max(#cities, 2) biome-weighted deposits, one type per deposit.
-- **Great Ruins**: 1–2 abandoned city sites near settlements, ≥30 km apart.
-- **Minor Ruins**: 4+1d6 random obelisks anywhere on land, ≥20 km apart.
-- **Trouble**: 1 per resource + safety-based extras near settlements/ruins, all ≥15 km from cities/towns.
+- **Great Ruins**: 1–2 abandoned city sites near settlements.
+- **Minor Ruins**: 4+1d6 random obelisks anywhere on land.
+- **Trouble**: 1 per resource + safety-based extras near settlements/ruins.
 - **Features**: 8+2d8 narrative features resolved into map objects.
-- **Feature placement**: All features pre-assigned to voronoi cells in two-phase pipeline — Phase 1 before biomes assigns each feature to a random cell (cities/towns/ruins/outposts restricted to land/hill cells), Phase 2 after biomes/habitability places features at the best qualifying point within their assigned cell, falling back to neighboring cells if needed.
+- **Feature placement**: All features are initially pre-assigned to voronoi cells (Phase 1 — cities/towns/ruins/outposts restricted to land/hill cells, everything else to any cell), then placed at the best qualifying point within their assigned cell after biomes/habitability (Phase 2), falling back to neighboring cells if needed. Hazards/obstacles/areas use no terrain compatibility or distance constraints — they place at any land point in their cell.
 
 ### Rendering
 

@@ -102,15 +102,6 @@ export const RESOURCE_BIOME_WEIGHT = {
   exotic: [0, 0, 0, 1, 1, 3, 2, 3, 3, 0, 0, 0, 2],
 };
 
-export const FEATURE_TERRAIN_TYPES = [
-  "land",
-  "mountains",
-  "hills",
-  "forest",
-  "river",
-  "water",
-];
-
 export const MAGIC_TYPES = [
   "necromancy",
   "evocation/destruction",
