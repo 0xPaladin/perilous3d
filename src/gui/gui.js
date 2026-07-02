@@ -1,5 +1,4 @@
 import GUI from 'lil-gui';
-
 export function initGUI({ app, generate, initialTemplate, initialTerrain, initialClimate, initialSafety, initialSize }) {
   const gui = new GUI({ title: 'Perilous Shores' });
 
@@ -22,7 +21,7 @@ export function initGUI({ app, generate, initialTemplate, initialTerrain, initia
   infoFolder.add(seedProxy, 'value').name('Seed').listen();
 
   const templateFolder = gui.addFolder('Template');
-  templateFolder.add(options, 'template', ['island', 'archipelago', 'bay', 'fjord', 'lake', 'land'])
+  templateFolder.add(options, 'template', ['island', 'archipelago', 'coast', 'lake', 'land'])
     .name('Template');
 
   const paramsFolder = gui.addFolder('Parameters');

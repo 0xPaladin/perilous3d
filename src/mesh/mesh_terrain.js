@@ -12,16 +12,6 @@ export const HILL_PALETTE = [
   new THREE.Color(...tc(TERRAIN.MOUNTAIN)),
 ];
 
-export const DUNE_PALETTE = [
-  new THREE.Color(...tc(TERRAIN.BEACH)),
-  new THREE.Color(...tc(TERRAIN.DESERT)),
-  new THREE.Color(...tc(TERRAIN.DESERT)),
-  new THREE.Color(...tc(TERRAIN.WOOD_DEAD)),
-  new THREE.Color(...tc(TERRAIN.WOOD_DEAD)),
-  new THREE.Color(...tc(TERRAIN.MOUNTAIN)),
-  new THREE.Color(...tc(TERRAIN.MOUNTAIN)),
-];
-
 function heightColor(h, palette) {
   return palette[Math.min(palette.length - 1, Math.floor(h * palette.length))];
 }
@@ -44,37 +34,6 @@ export function generateHillTile(prng, cx, cz, height, gridSize = 10) {
     peaks.push({ x: px, z: pz, h: ph });
   }
   return { type: "hill", peaks, falloff: 0.75 + prng() * 0.15, cx, cz, half, mainH: height, gridSize };
-}
-
-export function generateDuneTile(prng, cx, cz, height, gridSize = 10) {
-  const half = gridSize / 2;
-  const windAngle = prng() * Math.PI * 2;
-  const asymmetry = 0.3 + prng() * 0.5;
-
-  const offset = 0.5 + prng() * 1.5;
-  const mx = cx + Math.cos(windAngle) * offset;
-  const mz = cz + Math.sin(windAngle) * offset;
-  const mh = height * (0.8 + prng() * 0.2);
-  const peaks = [{ x: mx, z: mz, h: mh }];
-
-  if (prng() > 0.4) {
-    const sOff = -0.5 - prng() * 1.0;
-    const sx = cx + Math.cos(windAngle) * sOff;
-    const sz = cz + Math.sin(windAngle) * sOff;
-    peaks.push({ x: sx, z: sz, h: mh * (0.3 + prng() * 0.3) });
-  }
-
-  const nHorns = Math.floor(prng() * 3);
-  for (let i = 0; i < nHorns; i++) {
-    const side = i % 2 === 0 ? 1 : -1;
-    const spread = 1.5 + prng() * 1.5;
-    const ha = windAngle + Math.PI / 2 * side + (prng() - 0.5) * 0.3;
-    const hx = cx + Math.cos(ha) * spread;
-    const hz = cz + Math.sin(ha) * spread;
-    peaks.push({ x: hx, z: hz, h: mh * (0.4 + prng() * 0.3) });
-  }
-
-  return { type: "dune", peaks, falloff: 0.55 + prng() * 0.15, cx, cz, half, mainH: height, gridSize, windAngle, asymmetry };
 }
 
 export function computeHeight(x, z, tile) {

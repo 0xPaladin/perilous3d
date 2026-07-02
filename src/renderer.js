@@ -5,11 +5,11 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 
-export function createScene(canvas, region) {
+export function createScene(canvas, display, state) {
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x36dbd6); // sky top (matching PS subtle gradient would need shader)
 
-  const extentSize = region.extent?.width || 320;
+  const extentSize = display.extent?.width || 320;
   const s = extentSize / 320;
 
   const camera = new THREE.PerspectiveCamera(60, canvas.clientWidth / canvas.clientHeight, 0.1, 2000 * s);
@@ -20,6 +20,7 @@ export function createScene(canvas, region) {
   renderer.setSize(canvas.clientWidth, canvas.clientHeight);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFShadowMap;
+  renderer.localClippingEnabled = true;
   canvas.appendChild(renderer.domElement);
 
   const controls = new OrbitControls(camera, renderer.domElement);
@@ -45,32 +46,36 @@ export function createScene(canvas, region) {
   scene.add(sun);
 
   // ---- Terrain mesh ----
-  const state = { scene, camera, renderer, controls, extentScale: s };
+  const sceneState = { scene, camera, renderer, controls, extentScale: s, display, state };
 
     import('./mesh/mesher.js').then(({ buildTerrainMesh, buildRiverMesh, buildTrees, buildSettlements, buildResources, buildTrouble, buildSiteFeatures }) => {
-    const terrainMesh = buildTerrainMesh(region);
+    const terrainMesh = buildTerrainMesh(display);
     terrainMesh.receiveShadow = true;
     scene.add(terrainMesh);
 
-    const riverMesh = buildRiverMesh(region);
+    const riverMesh = buildRiverMesh(display);
     if (riverMesh) scene.add(riverMesh);
 
-    scene.add(buildTrees(region, scene));
-    scene.add(buildSettlements(region));
-    scene.add(buildResources(region));
-    scene.add(buildTrouble(region));
-    scene.add(buildSiteFeatures(region));
+    scene.add(buildTrees(display, state));
+    scene.add(buildSettlements(display, state));
+    scene.add(buildResources(display, state));
+    scene.add(buildTrouble(display, state));
+    scene.add(buildSiteFeatures(display, state));
 
-    state.terrain = terrainMesh;
+    sceneState.terrain = terrainMesh;
   });
 
   // ---- Mesh feature objects (mountains, forests from meshDev) ----
+
+
    import('./mesh/mesh_features.js').then(({ buildMeshMountains, buildMeshForests }) => {
-const mountainGroup = buildMeshMountains(region);
+/*
+    const mountainGroup = buildMeshMountains(display, state);
 mountainGroup.name = 'meshMountains';
 scene.add(mountainGroup);
+*/
 
-const forestGroup = buildMeshForests(region);
+const forestGroup = buildMeshForests(display, state);
 forestGroup.name = 'meshForests';
 scene.add(forestGroup);
 });
@@ -111,6 +116,46 @@ scene.add(forestGroup);
   }
   scene.add(cloudGroup);
 
+  const BIOME_NAMES = [
+    'Marine', 'Hot desert', 'Cold desert', 'Savanna', 'Grassland',
+    'Tropical seasonal forest', 'Temperate deciduous forest', 'Tropical rainforest',
+    'Temperate rainforest', 'Taiga', 'Tundra', 'Glacier', 'Wetland'
+  ];
+  const raycaster = new THREE.Raycaster();
+  const pointer = new THREE.Vector2();
+  let pointerDownPos = new THREE.Vector2();
+
+  renderer.domElement.addEventListener('pointerdown', (e) => {
+    pointerDownPos.set(e.clientX, e.clientY);
+  });
+
+  renderer.domElement.addEventListener('pointerup', (e) => {
+    if (pointerDownPos.distanceTo(new THREE.Vector2(e.clientX, e.clientY)) > 3) return;
+    pointer.x = (e.clientX / window.innerWidth) * 2 - 1;
+    pointer.y = -(e.clientY / window.innerHeight) * 2 + 1;
+    raycaster.setFromCamera(pointer, camera);
+    const terrain = sceneState.terrain;
+    if (!terrain) return;
+    const intersects = raycaster.intersectObject(terrain, false);
+    const tooltip = document.getElementById('cell-info-tooltip');
+    if (intersects.length === 0) {
+      if (tooltip) tooltip.style.display = 'none';
+      return;
+    }
+    const hit = intersects[0];
+    const idx = hit.face.a;
+    const height = display.heights[idx];
+    const moisture = display.moisture[idx];
+    const biome = display.biome[idx];
+    const biomeName = BIOME_NAMES[biome] || 'Unknown';
+    if (tooltip) {
+      tooltip.textContent = `idx: ${idx} | height: ${height.toFixed(4)} | moisture: ${moisture.toFixed(1)} | biome: ${biome} (${biomeName})`;
+      tooltip.style.display = 'block';
+      tooltip.style.left = (e.clientX + 14) + 'px';
+      tooltip.style.top = (e.clientY - 24) + 'px';
+    }
+  });
+
   window.addEventListener('resize', () => {
     const w = canvas.clientWidth;
     const h = canvas.clientHeight;
@@ -119,7 +164,7 @@ scene.add(forestGroup);
     renderer.setSize(w, h);
   });
 
-  return state;
+  return sceneState;
 }
 
 export function animate({ scene, camera, renderer, controls, extentScale }) {

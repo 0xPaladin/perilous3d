@@ -10,8 +10,9 @@
   "imports": {
     "three": "https://unpkg.com/three@0.185.0/build/three.module.js",
     "three/addons/": "https://unpkg.com/three@0.185.0/examples/jsm/",
-    "delaunator": "https://cdn.jsdelivr.net/npm/delaunator@5.0.1/+esm",
-    "lil-gui": "https://unpkg.com/lil-gui@0.19.2/dist/lil-gui.esm.js"
+    "d3-delaunay": "https://cdn.jsdelivr.net/npm/d3-delaunay@6.0.4/+esm",
+    "lil-gui": "https://unpkg.com/lil-gui@0.19.2/dist/lil-gui.esm.js",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
   }
 }
 </script>
@@ -33,6 +34,7 @@ body { margin: 0; overflow: hidden; font-family: Arial, sans-serif; }
 .ip-empty { padding: 3px 5px; color: #888; font-style: italic; }
 #ip-zoomout { width: 100%; padding: 4px; font-size: 12px; border: 1px solid #bbb; border-radius: 3px; background: #fff; cursor: pointer; color: #111; }
 #ip-zoomout:hover { background: #e8e8e8; }
+#cell-info-tooltip { display:none; position:absolute; z-index:30; background:rgba(0,0,0,0.78); color:#fff; padding:6px 10px; border-radius:6px; font-family:Arial,sans-serif; font-size:12px; pointer-events:none; white-space:nowrap; box-shadow:0 2px 8px rgba(0,0,0,0.35); }
 </style>
 </head>
 <body style="background: #CAE5FF">
@@ -43,6 +45,7 @@ body { margin: 0; overflow: hidden; font-family: Arial, sans-serif; }
   <div id="progress-detail"></div>
 </div>
 <div id="fps">-- fps</div>
+<div id="cell-info-tooltip"></div>
 
 <script type="module" src="src/main.js"></script>
 </body>

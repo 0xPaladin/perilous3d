@@ -33,22 +33,22 @@ export function initItemsPanel(app) {
   const listEl = document.getElementById('ip-list');
   const zoomBtn = document.getElementById('ip-zoomout');
 
-  const region = app.region;
-  if (!region) return;
+  const state = app.state;
+  if (!state) return;
 
   const items = {
-    cities: region.cities || [],
-    towns: region.towns || [],
-    resources: region.resources || [],
-    dungeons: (region.ruins || []).map(r => ({ ...r, _subtype: 'dungeon' })),
-    ruins: (region.minorRuins || []).map(r => ({ ...r, _subtype: 'ruin' })),
-    landmarks: (region.landmarkSites || []).map(r => ({ ...r, _subtype: 'landmark' })),
-    outposts: (region.outpostSites || []).map(o => ({ ...o, _subtype: 'outpost' })),
-    factions: (region.factionSites || []).map(f => ({ ...f, _subtype: 'faction' })),
-    hazards: (region.hazards || []).filter(h => !h.regionWide).map(h => ({ ...h, _subtype: 'hazard' })),
-    obstacles: (region.obstacles || []).map(o => ({ ...o, _subtype: 'obstacle' })),
-    areas: (region.areas || []).map(a => ({ ...a, _subtype: 'area' })),
-    trouble: region.trouble || [],
+    cities: state.cities || [],
+    towns: state.towns || [],
+    resources: state.resources || [],
+    dungeons: (state.ruins || []).map(r => ({ ...r, _subtype: 'dungeon' })),
+    ruins: (state.minorRuins || []).map(r => ({ ...r, _subtype: 'ruin' })),
+    landmarks: (state.landmarkSites || []).map(r => ({ ...r, _subtype: 'landmark' })),
+    outposts: (state.outpostSites || []).map(o => ({ ...o, _subtype: 'outpost' })),
+    factions: (state.factionSites || []).map(f => ({ ...f, _subtype: 'faction' })),
+    hazards: (state.hazards || []).filter(h => !h.regionWide).map(h => ({ ...h, _subtype: 'hazard' })),
+    obstacles: (state.obstacles || []).map(o => ({ ...o, _subtype: 'obstacle' })),
+    areas: (state.areas || []).map(a => ({ ...a, _subtype: 'area' })),
+    trouble: state.trouble || [],
   };
 
   select.addEventListener('change', () => {

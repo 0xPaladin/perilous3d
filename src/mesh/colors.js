@@ -31,11 +31,4 @@ export const TERRAIN_COLORS = {
   [TERRAIN.RIVER]:    [0.35, 0.57, 0.74],   // river blue
 };
 
-export function terrainColor(cell) {
-  const t = cell.data.terrain || TERRAIN.WATER;
-  return TERRAIN_COLORS[t] || TERRAIN_COLORS[TERRAIN.WATER];
-}
 
-export function beachHeightOffset() {
-  return 0.02; // fractional offset from water for beach color blending
-}
