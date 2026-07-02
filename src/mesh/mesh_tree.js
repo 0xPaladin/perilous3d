@@ -41,7 +41,7 @@ function forestLeaf(rng, palette) {
   return new THREE.Color(pick(rng, palette));
 }
 
-export function generateTree(prng, x, y, z, height, options = {}) {
+function generateTree(prng, x, y, z, height, options = {}) {
   const type = options.type ?? Math.floor(prng() * 5);
   const trunkH = height * (0.25 + prng() * 0.2);
   const trunkR = height * (0.035 + prng() * 0.015);

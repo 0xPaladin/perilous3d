@@ -96,7 +96,7 @@ export function buildHeightFieldFromVoronoi(pts, extent, seed, template, terrain
 
   // Generate voronoi cells
   const { centroids, cells } = generateVoronoiCells(extent, seed);
-  const cellAdj = buildCellAdjacency(centroids);
+  const { adj: cellAdj, hullSet } = buildCellAdjacency(centroids);
 
   // Parse and execute voronoi commands
   const terrainPrepend = VORONOI_TERRAIN_SCRIPTS[terrainType] || VORONOI_TERRAIN_SCRIPTS.highland;
@@ -123,31 +123,28 @@ export function buildHeightFieldFromVoronoi(pts, extent, seed, template, terrain
         const placement = parts[3] ? parts[3].toLowerCase() : 'neighbors';
         return { type: 'lake', pct, size, placement };
       }
-      if (type === 'range' || type === 'trough') {
+        if (type === 'range' || type === 'trough') {
         const pct = parseInt(parts[1], 10) / 100;
         const size = parseFloat(parts[2]);
         let startName = parts[3] ? parts[3].toLowerCase() : 'random';
         let stopName = parts[4] ? parts[4].toLowerCase() : 'random';
-        const CORNER_LOCATIONS = {
-          topleft: { nx: -1, nz: 1 }, top: { nx: 0, nz: 1 }, topright: { nx: 1, nz: 1 },
-          left: { nx: -1, nz: 0 }, center: { nx: 0, nz: 0 }, right: { nx: 1, nz: 0 },
-          bottomleft: { nx: -1, nz: -1 }, bottom: { nx: 0, nz: -1 }, bottomright: { nx: 1, nz: -1 },
-        };
-        if (startName === 'random' || !CORNER_LOCATIONS[startName]) {
-          const names = Object.keys(CORNER_LOCATIONS);
-          startName = names[Math.floor(rng() * names.length)];
+        const CORNER_NAMES = [
+          'topleft', 'top', 'topright', 'left', 'center', 'right',
+          'bottomleft', 'bottom', 'bottomright',
+        ];
+        if (startName === 'random' || !CORNER_NAMES.includes(startName)) {
+          startName = CORNER_NAMES[Math.floor(rng() * CORNER_NAMES.length)];
         }
-        if (stopName === 'random' || !CORNER_LOCATIONS[stopName]) {
-          const names = Object.keys(CORNER_LOCATIONS);
-          stopName = names[Math.floor(rng() * names.length)];
+        if (stopName === 'random' || !CORNER_NAMES.includes(stopName)) {
+          stopName = CORNER_NAMES[Math.floor(rng() * CORNER_NAMES.length)];
         }
-        return { type, pct, size, start: CORNER_LOCATIONS[startName], stop: CORNER_LOCATIONS[stopName] };
+        return { type, pct, size, start: startName, stop: stopName };
       }
       return null;
     })
     .filter(Boolean);
 
-  processVoronoiCommands(commands, cells, centroids, cellAdj, rng, extent);
+  processVoronoiCommands(commands, cells, centroids, cellAdj, hullSet, rng, extent);
 
   // Generate simplex noise per-point
   const simplexH = generateSimplexForPts(pts, extent, seed);
@@ -199,6 +196,8 @@ export function buildDisplayFromState(state) {
   const { rawHeights, heightMin, heightMax, temperature, tempBand, rivers, moisture, biome, maxLandH } = biomesResult;
 
   const { habitability, nearWater } = computeHabitability(pts, finalH, 0, biome, adj, rivers.flux, maxLandH);
+
+
 
   // 4. Build display object (mountains/peaks computed later in buildRegion)
   const display = {

@@ -59,12 +59,12 @@ function getFlux(h, adj) {
   return flux;
 }
 
-function fillSinks(h, adj, pts, extent, epsilon) {
+function fillSinks(h, adj, pts, extent, waterLevel, epsilon) {
   epsilon = epsilon || 1e-5;
   const infinity = 999999;
   const nh = zero(h.length);
   for (let i = 0; i < h.length; i++) {
-    if (isNearEdge(pts[i], extent)) {
+    if (isNearEdge(pts[i], extent) || h[i] <= waterLevel) {
       nh[i] = h[i];
     } else {
       nh[i] = infinity;
@@ -227,7 +227,7 @@ function computeRivers(h, adj, waterLevel) {
 }
 
 export function buildBiomes(h, { adj, pts, extent, waterLevel, baseTemp, npts, state }) {
-  h = fillSinks(h, adj, pts, extent);
+  h = fillSinks(h, adj, pts, extent, waterLevel);
   const rawHeights = Array.from(h);
   const heightMin = Math.min(...h);
   const heightMax = Math.max(...h);
@@ -306,4 +306,3 @@ export function computeHabitability(pts, heights, waterLevel, biome, adj, flux, 
   return { habitability, nearWater };
 }
 
-export { downhill, zero };

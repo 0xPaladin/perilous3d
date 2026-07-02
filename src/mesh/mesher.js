@@ -155,64 +155,6 @@ export function buildSettlements(display, state) {
   return group;
 }
 
-export function buildBiomeViewMesh(display) {
-  const { pts, triangles, heights, rawHeights, waterLevel, biome } = display;
-  const TERRAIN_Y_SCALE = 3.0;
-  const triCount = triangles.length / 3;
-
-  const positions = new Float32Array(triCount * 3 * 3);
-  const colors = new Float32Array(triCount * 3 * 3);
-
-  const biomes = Array.isArray(biome) ? biome : [];
-
-  for (let t = 0; t < triCount; t++) {
-    const i0 = triangles[t * 3];
-    const i1 = triangles[t * 3 + 1];
-    const i2 = triangles[t * 3 + 2];
-
-    const b0 = biomes[i0] || 0;
-    const b1 = biomes[i1] || 0;
-    const b2 = biomes[i2] || 0;
-    const tb = (b0 === b1 || b0 === b2) ? b0 : b1;
-    const c = BIOME_COLORS[tb] || BIOME_COLORS[0];
-
-    const idx = t * 9;
-    for (let k = 0; k < 3; k++) {
-      const vi = [i0, i1, i2][k];
-      const rawH = heights[vi];
-      const y = rawH > waterLevel ? (rawHeights[vi] * TERRAIN_Y_SCALE) : 0.0;
-      const pi = idx + k * 3;
-      positions[pi] = pts[vi][0];
-      positions[pi + 1] = y;
-      positions[pi + 2] = pts[vi][1];
-      colors[pi] = c[0];
-      colors[pi + 1] = c[1];
-      colors[pi + 2] = c[2];
-    }
-  }
-
-  const geom = new THREE.BufferGeometry();
-  geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  geom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-  geom.computeVertexNormals();
-
-  const mat = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
-  const mesh = new THREE.Mesh(geom, mat);
-  mesh.name = 'biomeView';
-
-  const edges = new THREE.EdgesGeometry(geom);
-  const edgeMat = new THREE.LineBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.15 });
-  const wireframe = new THREE.LineSegments(edges, edgeMat);
-  wireframe.name = 'biomeViewEdges';
-
-  const group = new THREE.Group();
-  group.name = 'biomeViewGroup';
-  group.add(mesh);
-  group.add(wireframe);
-
-  return group;
-}
-
 export function buildTrouble(display, state) {
   const { heights, rawHeights, waterLevel } = display;
   const { trouble } = state;

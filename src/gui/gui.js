@@ -1,7 +1,5 @@
 import GUI from 'lil-gui';
-import { TEMPLATE_WATER_LEVELS } from '../terrain/config.js';
-
-export function initGUI({ app, generate, initialTemplate, initialTerrain, initialClimate, initialSafety, initialSize, initialWaterLevel = 0.5 }) {
+export function initGUI({ app, generate, initialTemplate, initialTerrain, initialClimate, initialSafety, initialSize, initialWaterLevel = 0 }) {
   const gui = new GUI({ title: 'Perilous Shores' });
 
   const options = {
@@ -10,7 +8,7 @@ export function initGUI({ app, generate, initialTemplate, initialTerrain, initia
     climate: initialClimate != null ? initialClimate : 'Temperate',
     safety: initialSafety != null ? initialSafety : 0,
     size: initialSize != null ? initialSize : 320,
-    waterLevel: initialWaterLevel != null ? initialWaterLevel : 0.5,
+    waterLevel: initialWaterLevel != null ? initialWaterLevel : 0,
   };
 
   const infoFolder = gui.addFolder('Info');
@@ -26,13 +24,7 @@ export function initGUI({ app, generate, initialTemplate, initialTerrain, initia
   const templateFolder = gui.addFolder('Template');
   let waterLevelController;
   templateFolder.add(options, 'template', ['island', 'archipelago', 'bay', 'lake', 'land'])
-    .name('Template').onFinishChange(() => {
-      const wl = TEMPLATE_WATER_LEVELS[options.template];
-      if (wl != null) {
-        options.waterLevel = wl;
-        if (waterLevelController) waterLevelController.updateDisplay();
-      }
-    });
+    .name('Template');
 
   const paramsFolder = gui.addFolder('Parameters');
   paramsFolder.add(options, 'terrain', ['wetland', 'lowland', 'woodland', 'highland', 'wasteland']).name('Terrain');

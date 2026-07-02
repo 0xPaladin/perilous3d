@@ -1,6 +1,5 @@
 // main.js — bootstrap: PRNG seed → terrain generation → Three.js scene → render loop
 
-import Chance from 'https://cdn.jsdelivr.net/npm/chance@1.1.11/+esm';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { seedFromString } from './prng.js';
@@ -9,7 +8,7 @@ import { createScene, animate } from './renderer.js';
 import { progressPanel, updateSeedDisplay } from './gui/ui.js';
 import { initGUI } from './gui/gui.js';
 import { initItemsPanel } from './gui/items.js';
-import { TEMPLATE_WATER_LEVELS } from './terrain/config.js';
+
 
 const app = { sceneState: null, seed: null, seedStr: null };
 
@@ -35,7 +34,7 @@ function tempToClimate(temp) {
 
 let waterLevelController = null;
 
-function generate(template, seedStr, terrain, climate, safety, size, waterLevel = 0.5) {
+function generate(template, seedStr, terrain, climate, safety, size, waterLevel = 0) {
   app.seedStr = seedStr;
   const seed = seedFromString(seedStr);
   const seedNum = seed.toString(36).toUpperCase();
@@ -148,8 +147,7 @@ if (!initialClimate) {
 const initialSafety = urlParams.get('safety') ? parseInt(urlParams.get('safety'), 10) : 0;
 const initialSize = urlParams.get('size') ? parseInt(urlParams.get('size'), 10) : 320;
 const urlWaterLevel = urlParams.get('waterLevel') != null ? parseFloat(urlParams.get('waterLevel')) : null;
-const templateDefaultWl = TEMPLATE_WATER_LEVELS[initialTemplate] || null;
-const effectiveInitialWaterLevel = urlWaterLevel != null ? urlWaterLevel : (templateDefaultWl != null ? templateDefaultWl : 0.5);
+const effectiveInitialWaterLevel = urlWaterLevel != null ? urlWaterLevel : 0;
 const initialSeed = urlParams.get('seed') || (Math.random().toString(36).substring(2, 10) + Date.now().toString(36));
 
 // Init GUI
