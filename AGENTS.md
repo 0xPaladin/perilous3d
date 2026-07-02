@@ -31,19 +31,17 @@ perilous3d/
     │   ├── terrain.js      # buildRegion() — entry point. Calls buildDisplayFromState() from terrain_builder.js,
     │   │                    # then mountain peaks + resolveFeatures + generatePeoples.
     │   │                    # Returns { display, state } where display = geometry data, state = feature placements.
-    │   │                    # Exports: buildRegion, findMountainPeaks, findCities, findTowns, findRuins,
-    │   │                    # findMinorRuins, findTrouble, placeSiteFeature, findCellsByTerrain,
-    │   │                    # hazard/obstacle/areaCompatibleWithTerrain, rollFeatureTerrain,
-    │   │                    # findNeighborCells, computeNearResource, generateResources
+    │   │                    # Exports: buildRegion, createRng, findMountainPeaks
     │   ├── biomes.js        # Biome pipeline: buildBiomes(h, ctx) − sink fill → temperature → rivers → moisture → biome matrix
     │   │                    # Helpers: downhill, zero, fillSinks, computeTemperature, biomeFromMatrix,
     │   │                    # computeMoisture, computeRivers, computeHabitability
-    │   ├── features.js      # Feature generation + resolution:
+    │   ├── features.js      # Feature generation + resolution (all feature work):
     │   │                    # generateFeatures(safety, extentSize, rng) — rolls 8+2d8 narrative features
-    │   │                    # resolveFeatures({...}) — cities/towns/ruins/trouble/resources + feature loop
-    │   │                    # Constants imported from config.js (MAGIC_TYPES, ELEMENTS, FACTION_TYPES,
-    │   │                    # PLACE_NAMES, SITE_*_TYPES, etc.)
-    │   │                    # Depends on helpers imported from terrain.js
+    │   │                    # resolveFeatures({...}) — voronoi cell-based assignment + placement for
+    │   │                    #   cities/towns/ruins/trouble/resources/narrative features/outposts/
+    │   │                    #   landmarks/factions/hazards/obstacles/areas
+    │   │                    # Exports: resolveFeatures, generateFeatures, generatePlaceName,
+    │   │                    #   computeNearResource, hazard/obstacle/areaCompatibleWithTerrain
     │   └── coast.js         # Chaikin smoothing (retained, unused by current pipeline)
     ├── mesh/mesher.js    # Delaunay triangles → indexed THREE.BufferGeometry + vertex colors
     │                    #   + river mesh (LineSegments)
@@ -76,7 +74,7 @@ perilous3d/
 ## Conventions
 
 - ES module syntax (`import`/`export`), one responsibility per file
-- **terrain/terrain.js** exports `buildRegion(template, cols, rows, seed, terrain, baseTemp, cityCount, extentSize = 320, waterLevel = 0.5)` → returns `{ display, state }` where `display` contains geometry (pts, triangles, heights, biome, rivers, mounts, etc.) and `state` contains configuration + resolved feature placements (cities, towns, resources, ruins, trouble, features, etc.)
+- **terrain/terrain.js** exports `buildRegion(template, cols, rows, seed, terrain, baseTemp, cityCount, extentSize = 320, waterLevel = 0)` → returns `{ display, state }` where `display` contains geometry (pts, triangles, heights, biome, rivers, mounts, etc.) and `state` contains configuration + resolved feature placements (cities, towns, resources, ruins, trouble, features, etc.)
 - `display.waterLevel` is always 0 for voronoi terrain — cell types determine water vs land (water cells ≤ 0, land cells > 0)
 - **mesh/mesher.js** flattens terrain to `Y = 0.1` for land and `Y = 0.0` for water; river lines float above at `0.2` (land) / `0.05` (water); settlements render as procedural Three.js meshes added to a `settlements` group
 - Colors are linear RGB `[0-1]` floats; vertex colors assigned by Azgaar 5×26 biome matrix (temperature × moisture) → `BIOME_COLORS` lookup in `mesh/mesher.js`
@@ -90,7 +88,7 @@ perilous3d/
 | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Tune voronoi cell count          | `src/core/voronoi.js` → `generateVoronoiCells()` — `nCells = max(25, floor(25 × areaRatio))` at `extent.width`. Change the base or scaling factor.                                       |
 | Add/edit terrain presets         | `src/terrain/config.js` → `VORONOI_TERRAIN_SCRIPTS` — Land/Hill/Lake/Range/Trough command strings prepended per terrain type                                                              |
-| Add/edit map templates           | `src/terrain/config.js` → `VORONOI_TEMPLATE_SCRIPTS` — command strings per template (island/archipelago/bay/lake/land)                                                                    |
+| Add/edit map templates           | `src/terrain/config.js` → `VORONOI_TEMPLATE_SCRIPTS` — command strings per template (island/archipelago/coast/lake/land)                                                                    |
 | Tune mountain peak count         | `terrain/terrain.js` → `findMountainPeaks()` — `maxMounts = max(5, round(25×areaRatio))` controls number of 3D mountain meshes; `HILL_THRESHOLD(0.65)` controls minimum prominence. Only glacier-biome cells qualify. |
 | Tune base noise frequency        | `src/core/terrain_builder.js` → `generateSimplexForPts()` — `baseFreq` (2.0), `exponent` (3), `persistence` (0.5), `lacunarity` (2.0)                                                     |
 | Tweak voronoi command logic      | `src/core/terrain_commands.js` — BFS fill, cardinal filtering, line walking, edge detection for Land/Hill/Lake/Range/Trough                                                               |
@@ -99,10 +97,10 @@ perilous3d/
 | Tweak biome computation          | `terrain/biomes.js` → `buildBiomes(h, ctx)` — sink fill → temperature → rivers → moisture → biome matrix                                                                                 |
 | Tune temperature / moisture      | `terrain/biomes.js` → `computeTemperature()`, `computeMoisture()`                                                                                                                        |
 | Tweak feature-generator tables   | `terrain/config.js` → `MAGIC_TYPES`, `ELEMENTS`, `FACTION_TYPES`, `PRIMARY_GOALS`, `CONDITIONS`, `PLACE_NAMES`, `PLACE_ADJECTIVES`, `PLACE_NOUNS`, `SITE_*_TYPES`                         |
-| Tune feature resolution logic    | `terrain/features.js` → `resolveFeatures()` — receives terrain helpers via destructured params, resolves generated features into map objects                                             |
+| Tune feature resolution logic    | `terrain/features.js` → `resolveFeatures()` — voronoi cell-based assignment; receives cells, cellAdj, cellIndexForPoint, pts, h, biome, habitability, etc. via destructured params                                                                     |
 | Give generated places names      | `terrain/features.js` exports `generatePlaceName(rng)`; `resolveFeatures()` uses it for ruins, landmarks, dungeons, named places                                                           |
 | Generate regional features       | `terrain/features.js` → `generateFeatures(safety, extentSize, rng)` — 8+2d8 rolls of 1d12+safety                                                                                        |
-| Feature terrain compatibility     | `terrain/terrain.js` exports `hazardCompatibleWithTerrain()`, `obstacleCompatibleWithTerrain()`, `areaCompatibleWithTerrain()`, `rollFeatureTerrain()`, `findNeighborCells()`             |
+| Feature terrain compatibility     | `terrain/features.js` exports `hazardCompatibleWithTerrain()`, `obstacleCompatibleWithTerrain()`, `areaCompatibleWithTerrain()`                                                         |
 
 ## Algorithm Notes
 
@@ -169,6 +167,7 @@ The old pipeline (`generateSimplexBase` + `processTerrainCommands` + `IslandMask
 - **Minor Ruins**: 4+1d6 random obelisks anywhere on land, ≥20 km apart.
 - **Trouble**: 1 per resource + safety-based extras near settlements/ruins, all ≥15 km from cities/towns.
 - **Features**: 8+2d8 narrative features resolved into map objects.
+- **Feature placement**: All features pre-assigned to voronoi cells in two-phase pipeline — Phase 1 before biomes assigns each feature to a random cell (cities/towns/ruins/outposts restricted to land/hill cells), Phase 2 after biomes/habitability places features at the best qualifying point within their assigned cell, falling back to neighboring cells if needed.
 
 ### Rendering
 
@@ -194,7 +193,7 @@ The old pipeline (`generateSimplexBase` + `processTerrainCommands` + `IslandMask
 ### UI
 
 All user controls are powered by `lil-gui` (`src/gui/gui.js`). The GUI is initialized by `main.js` and exposes:
-- **Template** folder: map template dropdown (island, archipelago, bay, lake, land)
+- **Template** folder: map template dropdown (island, archipelago, coast, lake, land)
 - **Parameters** folder: Terrain (wetland/lowland/woodland/highland/wasteland), Climate (Arctic/Sub-arctic/Temperate/Sub-tropical/Tropical), Safety (Perilous/Dangerous/Unsafe/Safe → 0/1/2/3 cities), Map Size (50–400 km)
 - **Actions** folder: New Island (new random seed), Update (re-draw with same seed + current GUI params)
 - **Info** folder: read-only Seed display (auto-updates on generation)

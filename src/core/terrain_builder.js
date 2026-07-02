@@ -185,8 +185,10 @@ export function buildHeightFieldFromVoronoi(
   // Map simplex values to heights based on cell type.
   // 0 is the water boundary — water cells ≤ 0, land cells > 0.
   const heights = new Float64Array(pts.length);
+  const cellIndexForPoint = new Uint16Array(pts.length);
   for (let i = 0; i < pts.length; i++) {
     const ci = findCellForPoint(pts[i][0], pts[i][1], centroids, cellDelaunay);
+    cellIndexForPoint[i] = ci;
     const cell = cells[ci];
     const s = simplexH[i];
     if (
@@ -206,7 +208,7 @@ export function buildHeightFieldFromVoronoi(
     }
   }
 
-  return { heights, pts, islandGroups };
+  return { heights, pts, islandGroups, centroids, cells, cellDelaunay, cellAdj, cellIndexForPoint };
 }
 
 /**
@@ -234,7 +236,13 @@ export function buildDisplayFromState(state) {
   );
 
   // 2. Build height field from voronoi cells (0 = water boundary)
-  const { heights: h } = buildHeightFieldFromVoronoi(
+  const {
+    heights: h,
+    centroids,
+    cells,
+    cellAdj,
+    cellIndexForPoint,
+  } = buildHeightFieldFromVoronoi(
     pts,
     extent,
     seed,
@@ -310,5 +318,9 @@ export function buildDisplayFromState(state) {
     habitability,
     nearWater,
     heightMax,
+    centroids,
+    cells,
+    cellAdj,
+    cellIndexForPoint,
   };
 }

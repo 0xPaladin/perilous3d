@@ -210,12 +210,12 @@ function determinePeoplesType(region) {
   const { template, terrain, baseTemp } = region;
   if (baseTemp < 0) return 'Cold';
   if (baseTemp >= 20) {
-    if (template === 'island' || template === 'bay') return 'Marine';
+    if (template === 'island' || template === 'coast') return 'Marine';
     if (terrain === 'wetland') return 'Wetland';
     if (terrain === 'wasteland' || terrain === 'highland') return 'Desert';
     return 'Desert';
   }
-  if (template === 'island' || template === 'bay') return 'Marine';
+  if (template === 'island' || template === 'coast') return 'Marine';
   if (terrain === 'wetland') return 'Wetland';
   if (terrain === 'woodland') return 'Forest';
   return 'Plains';

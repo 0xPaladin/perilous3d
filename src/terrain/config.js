@@ -1,10 +1,3 @@
-export const TEMPLATE_WATER_LEVELS = {
-  island: 0.25,
-  archipelago: 0.25,
-  bay: 0.03,
-  lake: 0.03,
-  land: 0.01,
-};
 
 // Voronoi-based terrain commands — new pipeline
 export const VORONOI_TERRAIN_RAINFALL = {
@@ -37,7 +30,7 @@ export const VORONOI_TEMPLATE_SCRIPTS = {
     "Land 5 noedge",
     "Hill 15 random",
   ],
-  bay: ["Land 70 east north", "Hill 10 random"],
+  coast: ["Land 70 east north", "Hill 10 random"],
   lake: ["Land 100", "Lake 20 neighbors"],
   land: ["Land 100", "Hill 25 random", "Range 30 random random"],
 };
