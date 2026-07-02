@@ -5,11 +5,11 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 
-export function createScene(canvas, region) {
+export function createScene(canvas, display, state) {
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x36dbd6); // sky top (matching PS subtle gradient would need shader)
 
-  const extentSize = region.extent?.width || 320;
+  const extentSize = display.extent?.width || 320;
   const s = extentSize / 320;
 
   const camera = new THREE.PerspectiveCamera(60, canvas.clientWidth / canvas.clientHeight, 0.1, 2000 * s);
@@ -46,23 +46,23 @@ export function createScene(canvas, region) {
   scene.add(sun);
 
   // ---- Terrain mesh ----
-  const state = { scene, camera, renderer, controls, extentScale: s, region };
+  const sceneState = { scene, camera, renderer, controls, extentScale: s, display, state };
 
     import('./mesh/mesher.js').then(({ buildTerrainMesh, buildRiverMesh, buildTrees, buildSettlements, buildResources, buildTrouble, buildSiteFeatures }) => {
-    const terrainMesh = buildTerrainMesh(region);
+    const terrainMesh = buildTerrainMesh(display);
     terrainMesh.receiveShadow = true;
     scene.add(terrainMesh);
 
-    const riverMesh = buildRiverMesh(region);
+    const riverMesh = buildRiverMesh(display);
     if (riverMesh) scene.add(riverMesh);
 
-    scene.add(buildTrees(region, scene));
-    scene.add(buildSettlements(region));
-    scene.add(buildResources(region));
-    scene.add(buildTrouble(region));
-    scene.add(buildSiteFeatures(region));
+    scene.add(buildTrees(display, state));
+    scene.add(buildSettlements(display, state));
+    scene.add(buildResources(display, state));
+    scene.add(buildTrouble(display, state));
+    scene.add(buildSiteFeatures(display, state));
 
-    state.terrain = terrainMesh;
+    sceneState.terrain = terrainMesh;
   });
 
   // ---- Mesh feature objects (mountains, forests from meshDev) ----
@@ -70,12 +70,12 @@ export function createScene(canvas, region) {
 
    import('./mesh/mesh_features.js').then(({ buildMeshMountains, buildMeshForests }) => {
 /*
-    const mountainGroup = buildMeshMountains(region);
+    const mountainGroup = buildMeshMountains(display, state);
 mountainGroup.name = 'meshMountains';
 scene.add(mountainGroup);
 */
 
-const forestGroup = buildMeshForests(region);
+const forestGroup = buildMeshForests(display, state);
 forestGroup.name = 'meshForests';
 scene.add(forestGroup);
 });
@@ -134,7 +134,7 @@ scene.add(forestGroup);
     pointer.x = (e.clientX / window.innerWidth) * 2 - 1;
     pointer.y = -(e.clientY / window.innerHeight) * 2 + 1;
     raycaster.setFromCamera(pointer, camera);
-    const terrain = state.terrain;
+    const terrain = sceneState.terrain;
     if (!terrain) return;
     const intersects = raycaster.intersectObject(terrain, false);
     const tooltip = document.getElementById('cell-info-tooltip');
@@ -144,9 +144,9 @@ scene.add(forestGroup);
     }
     const hit = intersects[0];
     const idx = hit.face.a;
-    const height = region.heights[idx];
-    const moisture = region.moisture[idx];
-    const biome = region.biome[idx];
+    const height = display.heights[idx];
+    const moisture = display.moisture[idx];
+    const biome = display.biome[idx];
     const biomeName = BIOME_NAMES[biome] || 'Unknown';
     if (tooltip) {
       tooltip.textContent = `idx: ${idx} | height: ${height.toFixed(4)} | moisture: ${moisture.toFixed(1)} | biome: ${biome} (${biomeName})`;
@@ -164,7 +164,7 @@ scene.add(forestGroup);
     renderer.setSize(w, h);
   });
 
-  return state;
+  return sceneState;
 }
 
 export function animate({ scene, camera, renderer, controls, extentScale }) {

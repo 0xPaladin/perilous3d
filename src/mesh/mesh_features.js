@@ -31,8 +31,9 @@ function findNearestHeight(x, z, pts, heights) {
 
 const HILL_THRESHOLD = 0.65;
 
-export function buildMeshMountains(region) {
-  const { pts, heights, waterLevel, heightMax, mounts, seed, extent } = region;
+export function buildMeshMountains(display, state) {
+  const { pts, heights, waterLevel, heightMax, mounts, extent } = display;
+  const { seed } = state;
   const group = new THREE.Group();
   group.name = 'meshMountains';
   if (!mounts || !pts || !heights) return group;
@@ -71,8 +72,9 @@ export function buildMeshMountains(region) {
 
 const FOREST_DENSITY = [0, 0, 0, 0.2, 0.2, 0.7, 0.7, 1.0, 1.0, 0.5, 0.05, 0, 0.4];
 
-export function buildMeshForests(region) {
-  const { pts, heights, rawHeights, waterLevel, heightMax, biome, seed, extent } = region;
+export function buildMeshForests(display, state) {
+  const { pts, heights, rawHeights, waterLevel, heightMax, biome, extent } = display;
+  const { seed, cities, towns, ruins, minorRuins } = state;
   const group = new THREE.Group();
   if (!pts || !biome) return group;
 
@@ -148,7 +150,7 @@ export function buildMeshForests(region) {
     }
   }
 
-  const settlements = (region.cities || []).concat(region.towns || []);
+  const settlements = (cities || []).concat(towns || []);
   const RUIN_RADIUS_SQ = 5 * 5;
   const CLEAR_RADIUS_SQ = 5 * 5;
   const MINOR_RUIN_RADIUS_SQ = 3 * 3;
@@ -164,14 +166,14 @@ export function buildMeshForests(region) {
       const dx = fc.cx - s.x, dz = fc.cz - s.z;
       if (dx * dx + dz * dz < CLEAR_RADIUS_SQ) { obstructed = true; break; }
     }
-    if (!obstructed && region.ruins) {
-      for (const r of region.ruins) {
+    if (!obstructed && ruins) {
+      for (const r of ruins) {
         const dx = fc.cx - r.x, dz = fc.cz - r.z;
         if (dx * dx + dz * dz < RUIN_RADIUS_SQ) { obstructed = true; break; }
       }
     }
-    if (!obstructed && region.minorRuins) {
-      for (const r of region.minorRuins) {
+    if (!obstructed && minorRuins) {
+      for (const r of minorRuins) {
         const dx = fc.cx - r.x, dz = fc.cz - r.z;
         if (dx * dx + dz * dz < MINOR_RUIN_RADIUS_SQ) { obstructed = true; break; }
       }

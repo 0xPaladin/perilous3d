@@ -1,18 +1,69 @@
 import { createRng } from "../terrain/terrain.js";
 
 const PEOPLES = {
-  Marine:
-    "Water,Storm,Plains,Time/4,2,1,0.5::Feathered,Fanged,Finned,Tentacled,Shelled,Selachii,Bato,Angui/1,1,2,2,2,1,1,1",
-  Desert:
-    "Fire,Storm,Time,Plains,Mountain/3,1,0.5,2,2::Feathered,Scaled,Fanged,Hooved,Roda,Lago,Web,Formic,Opteri,Koleo,Chirops,Skoraps/1,1,1,1,1,1,1,1,1,1,1,1",
-  Plains:
-    "Fire,Water,Plains,Forest,Storm,Frost,Time/1,1,3,1,2,1,0.5::Feathered,Scaled,Fanged,Hooved,Roda,Lago,Web,Formic,Opteri,Koleo,Chirops,Skoraps/1,1,1,1,1,1,1,1,1,1,1,1",
-  Forest:
-    "Water,Mountain,Forest,Storm,Frost,Time/2,1,3,2,1,0.5::Feathered,Scaled,Fanged,Hooved,Roda,Lago,Web,Formic,Opteri,Koleo,Chirops,Skoraps/1,1,1,1,1,1,1,1,1,1,1,1",
-  Cold: "Mountain,Plains,Forest,Storm,Frost,Time/2,1,1,1,3,0.5::Feathered,Scaled,Fanged,Hooved,Roda,Lago,Chirops,Web,Formic,Opteri,Koleo/2,2,2,2,2,2,2,1,1,1,1",
-  Wetland:
-    "Water,Forest,Storm,Time/3,2,1,1::Feathered,Scaled,Fanged,Hooved,Roda,Lago,Finned,Tentacled,Web,Formic,Opteri,Koleo,Shelled,Chirops,Bato,Angui,Skoraps/2,2,2,2,2,2,2,2,2,2,2,2,2,1,1,1,1",
+  Marine: "Water,Storm,Plains,Time/4,2,1,0.5",
+  Desert: "Fire,Storm,Time,Plains,Mountain/3,1,0.5,2,2",
+  Plains: "Fire,Water,Plains,Forest,Storm,Frost,Time/1,1,3,1,2,1,0.5",
+  Forest: "Water,Mountain,Forest,Storm,Frost,Time/2,1,3,2,1,0.5",
+  Cold: "Mountain,Plains,Forest,Storm,Frost,Time/2,1,1,1,3,0.5",
+  Wetland: "Water,Forest,Storm,Time/3,2,1,1",
 };
+
+const BODY_CATEGORIES = ["Humanoid", "Animal", "Artificial", "Alien"];
+const BODY_CATEGORY_WEIGHTS = [55, 15, 20, 10];
+
+const BODY_SUBTYPES = {
+  Humanoid: {
+    items: ["Standard_Human", "Humanoid_Elemental", "Humanoid_Form", "Humanoid_Both"],
+    weights: [50, 10, 20, 20],
+  },
+  Animal: {
+    items: ["Animal"],
+    weights: [1],
+  },
+  Artificial: {
+    items: ["Artificial_Humanoid", "Artificial_Geometric", "Artificial_Animal", "Artificial_Hologram", "Artificial_Cloud", "Artificial_Elemental"],
+    weights: [1, 1, 1, 1, 1, 1],
+  },
+  Alien: {
+    items: ["Alien_PlantAnimal", "Alien_AnimalOddity", "Alien_Slime", "Alien_GeometricOddity", "Alien_AnimalElemental", "Alien_GeometricElementOddity"],
+    weights: [1, 1, 1, 1, 1, 1],
+  },
+};
+
+const BEAST_TABLES = {
+  WATERGOING: ["whale/narwhal", "squid/octopus", "dolphin/shark/alligator", "turtle/clam/snail/crab", "fish/eel/snake", "frog/toad", "jelly/anemone", "insect/barnacle"],
+  AIRBORNE: ["pteranadon/condor", "eagle/owl/hawk/falcon", "heron/crane/ostrich", "crow/raven/gull", "songbird/parrot", "chicken/duck/goose", "bee/wasp/hornet/locust", "butterfly/moth/mosquito"],
+  EARTHBOUND: ["dinosaur/elephant", "ox/rhino/bear/apex hunter", "deer/horse/camel", "panther/wolf/boar", "snake/lizard/armadillo", "mouse/rat/weasel/cat", "ant/centipede/scorpion", "slug/worm/tick/beetle"],
+};
+
+const ARTIFICIAL_VARIATIONS = ["Humanoid", "Geometric", "Beast-like", "Hologram", "Cloud", "Elemental"];
+
+const PLANT_VARIATIONS = ["Shrub", "Tree", "Flower", "Cactus", "Vine", "Fungus"];
+
+const ODDITY_LIST = [
+  "bright/garish/harsh",
+  "geometric/concentric",
+  "web/network",
+  "crystalline/glassy",
+  "fungal/slimy/moldy",
+  "gaseous/misty/illusory",
+  "volcanic/explosive",
+  "magnetic/repellant",
+  "multilevel/tiered",
+  "absurd/impossible",
+];
+
+const ALIEN_VARIATIONS = [
+  "Chimeric, {{C_C.Beast}} and {{C_C.Beast}}",
+  "Chimeric, {{C_C.Beast}} and {{C_C.Beast}} and {{C_C.Beast}}",
+  "Hybrid {{C_C.Beast}} and {{eval VNPC.PlantVariation}}",
+  "Chimeric, {{C_C.Beast}} and {{C_C.Beast}} with {{eval C_D.Oddity}} features",
+  "Slime - amorphous form",
+  "Geometric with {{eval C_D.Oddity}} features",
+  "{{C_C.Beast}}-like, {{eval C_D.ElementType}}-features",
+  "Geometric, {{eval C_D.ElementType}}-features and {{eval C_D.Oddity}}",
+];
 
 const NO_VIRTUES = { evil: 0, chaotic: 1, neutral: 1, lawful: 2, good: 3 };
 const NO_VICES = { evil: 3, chaotic: 3, neutral: 1, lawful: 1, good: 0 };
@@ -155,21 +206,111 @@ function rollPopulace(rng) {
   return "exuberant";
 }
 
-export function generatePeople(seed, region) {
+function determinePeoplesType(region) {
+  const { template, terrain, baseTemp } = region;
+  if (baseTemp < 0) return 'Cold';
+  if (baseTemp >= 20) {
+    if (template === 'island' || template === 'bay') return 'Marine';
+    if (terrain === 'wetland') return 'Wetland';
+    if (terrain === 'wasteland' || terrain === 'highland') return 'Desert';
+    return 'Desert';
+  }
+  if (template === 'island' || template === 'bay') return 'Marine';
+  if (terrain === 'wetland') return 'Wetland';
+  if (terrain === 'woodland') return 'Forest';
+  return 'Plains';
+}
+
+function parseElementEntry(str) {
+  const [items, w] = str.split('/');
+  return { items: items.split(','), weights: w.split(',').map(Number) };
+}
+
+function rollBodyType(rng) {
+  const category = weightedPick(BODY_CATEGORIES, BODY_CATEGORY_WEIGHTS, rng);
+  const { items, weights } = BODY_SUBTYPES[category];
+  return { category, subtype: weightedPick(items, weights, rng) };
+}
+
+function rollBeastType(rng) {
+  const roll = rollD12(rng);
+  let cat;
+  if (roll <= 2) cat = "WATERGOING";
+  else if (roll <= 5) cat = "AIRBORNE";
+  else cat = "EARTHBOUND";
+  const types = BEAST_TABLES[cat];
+  return { beastCategory: cat, beastType: types[Math.floor(rng() * types.length)] };
+}
+
+function rollArtificialVariation(rng, element) {
+  const base = ARTIFICIAL_VARIATIONS[Math.floor(rng() * ARTIFICIAL_VARIATIONS.length)];
+  switch (base) {
+    case "Beast-like": {
+      const allBeasts = Object.values(BEAST_TABLES).flat();
+      return allBeasts[Math.floor(rng() * allBeasts.length)] + "-like";
+    }
+    case "Elemental":
+      return element + "-elemental";
+    default:
+      return base;
+  }
+}
+
+function pickBeast(rng) {
+  const allBeasts = Object.values(BEAST_TABLES).flat();
+  return allBeasts[Math.floor(rng() * allBeasts.length)];
+}
+
+function rollOddity(rng) {
+  const roll = rollD12(rng);
+  if (roll <= 11) {
+    return ODDITY_LIST[Math.floor(rng() * ODDITY_LIST.length)];
+  }
+  const i = Math.floor(rng() * ODDITY_LIST.length);
+  let j = Math.floor(rng() * (ODDITY_LIST.length - 1));
+  if (j >= i) j++;
+  return ODDITY_LIST[i] + " + " + ODDITY_LIST[j];
+}
+
+function rollAlienVariation(rng, element) {
+  const templates = ALIEN_VARIATIONS;
+  const template = templates[Math.floor(rng() * templates.length)];
+  return template
+    .replace(/\{\{C_C\.Beast\}\}/g, () => pickBeast(rng))
+    .replace(/\{\{eval VNPC\.PlantVariation\}\}/g, () => PLANT_VARIATIONS[Math.floor(rng() * PLANT_VARIATIONS.length)])
+    .replace(/\{\{eval C_D\.Oddity\}\}/g, () => rollOddity(rng))
+    .replace(/\{\{eval C_D\.ElementType\}\}/g, () => element);
+}
+
+export function generatePeoples(seed, region) {
   const rng = createRng(seed ^ 0xd0ce);
   const count = Math.floor(rng() * 2) + 1;
-
+  const type = determinePeoplesType(region);
+  const elements = parseElementEntry(PEOPLES[type]);
   const groups = [];
   for (let i = 0; i < count; i++) {
     const alignment = weightedPick(ALIGNMENTS, ALIGNMENT_WEIGHTS, rng);
-    groups.push({
-      rarity: weightedPick(RARITIES, RARITY_WEIGHTS, rng),
+    const { category, subtype } = rollBodyType(rng);
+    const element = weightedPick(elements.items, elements.weights, rng);
+    const group = {
+      type,
+      element,
+      body: subtype,
+      bodyCategory: category,
       alignment,
       ...determineValues(alignment, rng),
       economy: rollEconomy(rng),
       military: rollMilitary(rng),
       populace: rollPopulace(rng),
-    });
+    };
+    if (category === "Animal") {
+      Object.assign(group, rollBeastType(rng));
+    } else if (category === "Artificial") {
+      group.artificialVariation = rollArtificialVariation(rng, element);
+    } else if (category === "Alien") {
+      group.alienVariation = rollAlienVariation(rng, element);
+    }
+    groups.push(group);
   }
   return groups;
 }

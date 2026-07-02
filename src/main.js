@@ -53,9 +53,9 @@ function generate(template, seedStr, terrain, climate, safety, size, waterLevel 
   const cityCount = safety || 0;
   const baseTemp = climateToTemp(climate);
 
-  let region;
+  let result;
   try {
-    region = buildRegion(template, 55, 55, seed, terrain, baseTemp, cityCount, size, waterLevel);
+    result = buildRegion(template, 55, 55, seed, terrain, baseTemp, cityCount, size, waterLevel);
   } catch (e) {
     console.error('terrain generation failed:', e);
     progressPanel.hide();
@@ -67,10 +67,12 @@ function generate(template, seedStr, terrain, climate, safety, size, waterLevel 
   const oldCanvas = canvas.querySelector('canvas');
   if (oldCanvas) oldCanvas.remove();
 
-  logRegionStats(region);
+  const { display, state } = result;
+  logRegionStats(display, state);
 
-  app.region = region;
-  app.sceneState = createScene(canvas, region);
+  app.display = display;
+  app.state = state;
+  app.sceneState = createScene(canvas, display, state);
   animate(app.sceneState);
   initItemsPanel(app);
 
@@ -85,7 +87,7 @@ function generate(template, seedStr, terrain, climate, safety, size, waterLevel 
   url.searchParams.set('waterLevel', waterLevel);
   history.replaceState({}, '', url);
 
-  logRegionStats(region,url.searchParams.toString());
+  logRegionStats(display, state, url.searchParams.toString());
 }
 
 const BIOME_NAMES = [
@@ -94,33 +96,33 @@ const BIOME_NAMES = [
   'Temperate rainforest', 'Taiga', 'Tundra', 'Glacier', 'Wetland'
 ];
 
-function logRegionStats(region, params) {
+function logRegionStats(display, state, params) {
   const biomeCounts = new Array(13).fill(0);
-  if (region.biome) {
-    for (let i = 0; i < region.biome.length; i++) {
-      const b = region.biome[i];
+  if (display.biome) {
+    for (let i = 0; i < display.biome.length; i++) {
+      const b = display.biome[i];
       if (b >= 0 && b < 13) biomeCounts[b]++;
     }
   }
   console.log('=== Region Stats ===');
   console.log('Parameters: ', params);
   console.log('Biomes:', biomeCounts.map((c, i) => `${BIOME_NAMES[i]}: ${c}`).join(' | '));
-  console.log('Mountains:', (region.mounts || []).map((m, i) => ({ idx: i, x: m.x, y: m.y, h: m.peakHeight })));
-  console.log('Cities:', region.cities || []);
-  console.log('Towns:', region.towns || []);
-  console.log('Resources:', region.resources || []);
-  console.log('Ruins:', region.ruins || []);
-  console.log('Minor Ruins:', region.minorRuins || []);
-  console.log('Trouble:', region.trouble || []);
-  console.log('Outposts:', region.outpostSites || []);
-  console.log('Landmarks:', region.landmarkSites || []);
-  console.log('Factions:', region.factionSites || []);
-  console.log('Hazards:', region.hazards || []);
-  console.log('Obstacles:', region.obstacles || []);
-  console.log('Areas:', region.areas || []);
-  if (region.features && region.features.length) {
-    console.log(`Features (${region.features.length}):`);
-    region.features.forEach((f, i) => {
+  console.log('Mountains:', (display.mounts || []).map((m, i) => ({ idx: i, x: m.x, y: m.y, h: m.peakHeight })));
+  console.log('Cities:', state.cities || []);
+  console.log('Towns:', state.towns || []);
+  console.log('Resources:', state.resources || []);
+  console.log('Ruins:', state.ruins || []);
+  console.log('Minor Ruins:', state.minorRuins || []);
+  console.log('Trouble:', state.trouble || []);
+  console.log('Outposts:', state.outpostSites || []);
+  console.log('Landmarks:', state.landmarkSites || []);
+  console.log('Factions:', state.factionSites || []);
+  console.log('Hazards:', state.hazards || []);
+  console.log('Obstacles:', state.obstacles || []);
+  console.log('Areas:', state.areas || []);
+  if (state.features && state.features.length) {
+    console.log(`Features (${state.features.length}):`);
+    state.features.forEach((f, i) => {
       const parts = [`${i + 1}. ${f.type}`];
       if (f.subtype) parts.push(`subtype=${JSON.stringify(f.subtype)}`);
       if (f.hazard) parts.push(`hazard=${JSON.stringify(f.hazard)}`);

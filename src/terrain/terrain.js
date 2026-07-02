@@ -5,6 +5,7 @@ import { generatePlaceName, resolveFeatures } from './features.js';
 //import constants from config
 import {HIGHLANDS_RIDGE, TERRAIN_STATE_CMDS, TEMPLATE_SCRIPTS, TROUBLE_TYPES} from "./config.js";
 import { buildBiomes, computeHabitability, downhill, zero } from './biomes.js';
+import { generatePeoples } from '../people/people.js';
 
 export function createRng(seed) {
   let s = seed | 0;
@@ -680,7 +681,7 @@ export function findMountainPeaks(pts, heights, waterLevel, heightMax, adj, exte
   return mounts;
 }
 
-export function buildRegion(template, cols, rows, seed, terrain, baseTemp = 22, cityCount = 0, extentSize = 320, waterLevel = 0.5) {
+export function buildRegion(template, cols, rows, seed, terrainType, baseTemp = 22, cityCount = 0, extentSize = 320, waterLevel = 0.5) {
   const rng = createRng(seed);
   const extent = { width: extentSize, height: extentSize };
   const areaRatio = (extentSize / 320) ** 2;
@@ -694,12 +695,12 @@ export function buildRegion(template, cols, rows, seed, terrain, baseTemp = 22, 
   const adj = buildAdjacency(del, npts);
 
   // Build command list from terrain + template
-  const terrainPrepend = (TERRAIN_STATE_CMDS[terrain] || TERRAIN_STATE_CMDS.highland);
+  const terrainPrepend = (TERRAIN_STATE_CMDS[terrainType] || TERRAIN_STATE_CMDS.highland);
   const templateScript = (TEMPLATE_SCRIPTS[template] || TEMPLATE_SCRIPTS.island);
   const rawCommands = [...terrainPrepend, ...templateScript];
 
   //if highlands push ridge to start
-  if(terrain === "highland") {
+  if(terrainType === "highland") {
     //rawCommands.unshift(HIGHLANDS_RIDGE,'Apply');
   }
 
@@ -707,16 +708,16 @@ export function buildRegion(template, cols, rows, seed, terrain, baseTemp = 22, 
   const commands = rawCommands.map(parseCommand).filter(Boolean);
 
   // State passed to processTerrainCommands (scale/rainfall/radius/ratio set by commands)
-  const state = { scale: 1.0, rainfall: 1.0, radiusScale: 1.0, ratio: 1.0 };
+  const cmdState = { scale: 1.0, rainfall: 1.0, radiusScale: 1.0, ratio: 1.0 };
 
   // Step 1: Generate base terrain from simplex noise FBM + redistribution
   let h = generateSimplexBase(pts, extent, seed);
 
   // Step 2: Apply feature commands (hills, ridges, pits) as uplift on base
-  h = processTerrainCommands(commands, pts, extent, rng, state, h).heights;
+  h = processTerrainCommands(commands, pts, extent, rng, cmdState, h).heights;
 
   //biomes
-  const biomesResult = buildBiomes(h, { adj, pts, extent, waterLevel, baseTemp, npts, state });
+  const biomesResult = buildBiomes(h, { adj, pts, extent, waterLevel, baseTemp, npts, state: cmdState });
   h = biomesResult.h;
   const { rawHeights, heightMin, heightMax, temperature, tempBand, rivers, moisture, biome, maxLandH } = biomesResult;
 
@@ -757,7 +758,10 @@ export function buildRegion(template, cols, rows, seed, terrain, baseTemp = 22, 
     seed
   });
 
-  return {
+  const peoples = generatePeoples(seed, { template, terrain: terrainType, baseTemp });
+
+  // Split: display data (geometry) vs state (configuration + feature placements)
+  const display = {
     pts,
     triangles: del.triangles,
     halfedges: del.halfedges,
@@ -768,10 +772,6 @@ export function buildRegion(template, cols, rows, seed, terrain, baseTemp = 22, 
     heightMax,
     extent,
     waterLevel,
-    template,
-    seed,
-    mountainCount: mounts.length,
-    mounts,
     temperature,
     tempBand,
     moisture,
@@ -779,6 +779,18 @@ export function buildRegion(template, cols, rows, seed, terrain, baseTemp = 22, 
     rivers,
     habitability,
     nearWater,
+    mountainCount: mounts.length,
+    mounts,
+  };
+
+  const regionState = {
+    seed,
+    extent,
+    waterLevel,
+    template,
+    terrain: terrainType,
+    baseTemp,
+    cityCount,
     cities,
     towns,
     resources,
@@ -792,5 +804,8 @@ export function buildRegion(template, cols, rows, seed, terrain, baseTemp = 22, 
     hazards,
     obstacles,
     areas,
+    peoples,
   };
+
+  return { display, state: regionState };
 }
