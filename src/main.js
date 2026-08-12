@@ -2,7 +2,7 @@
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { seedFromString } from './prng.js';
+import { seedFromString } from './core/prng.js';
 import { buildRegion } from './terrain/terrain.js';
 import { createScene, animate } from './renderer.js';
 import { progressPanel, updateSeedDisplay } from './gui/ui.js';

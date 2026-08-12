@@ -27,13 +27,9 @@ Perilous 3D generates a **50–400 km configurable** map (default 320×320 km) w
 ```
 index.html
 └── src/
-    ├── prng.js      — seedFromString (legacy, kept for main.js)
-    ├── noise.js     — Perlin + FractalNoise (retained, unused by current pipeline)
-    ├── grid.js      — Vec2, hex grid, DCEL (retained, unused by current pipeline)
-    ├── raisers.js   — Skeleton/midpoint-displacement raisers (retained, unused)
     ├── core/
-    │   ├── state.js           — RegionState + DisplayData JSDoc typedefs
-    │   ├── voronoi.js         — Voronoi cell generation, nearest-centroid lookup, cell adjacency
+    │   ├── prng.js           — mulberry32 PRNG + seedFromString
+    │   ├── voronoi.js        — Voronoi cell generation, nearest-centroid lookup, cell adjacency
     │   ├── terrain_commands.js   — Voronoi command execution (Land/Hill/Lake/Range/Trough)
     │   └── terrain_builder.js    — Voronoi pipeline orchestrator → display object
     ├── terrain/
@@ -44,8 +40,7 @@ index.html
     │   │                       from terrain_builder.js, then mountain peaks + features
     │   │                       resolution. Returns { display, state }.
     │   ├── biomes.js           — buildBiomes() — sink fill → temperature → rivers → moisture → biome matrix
-    │   ├── features.js         — generateFeatures() + resolveFeatures()
-    │   └── coast.js            — Chaikin smoothing (retained, unused by current pipeline)
+    │   └── features.js         — generateFeatures() + resolveFeatures()
     ├── mesh/mesher.js        — Delaunay → Three.js BufferGeometry + vertex colors
     │                           + rivers + settlements + resources + ruins + trouble + site features
     ├── mesh/colors.js         — PS terrain palette

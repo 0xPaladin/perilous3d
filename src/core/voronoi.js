@@ -26,7 +26,7 @@ export function generateVoronoiCells(extent, rng) {
 
 /**
  * Build cell adjacency from centroids via d3-delaunay Voronoi.
- * Returns { adj, hullSet, edgeSet, delaunay } where edgeSet contains indices of cells whose
+ * Returns { adj, edgeSet, delaunay } where edgeSet contains indices of cells whose
  * Voronoi polygon touches the extent boundary (clipped cells).
  */
 export function buildCellAdjacency(centroids, extent) {
@@ -49,8 +49,7 @@ export function buildCellAdjacency(centroids, extent) {
     }
   }
 
-  const hullSet = new Set(del.hull);
-  return { adj, hullSet, edgeSet, delaunay: del };
+  return { adj, edgeSet, delaunay: del };
 }
 
 /**

@@ -12,16 +12,7 @@ import {
   VORONOI_TEMPLATE_SCRIPTS,
   VORONOI_TERRAIN_RAINFALL,
 } from "../terrain/config.js";
-
-function createRng(seed) {
-  let s = seed | 0;
-  return function () {
-    s = (s + 0x6d2b79f5) | 0;
-    let t = Math.imul(s ^ (s >>> 15), 1 | s);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
+import { mulberry32 } from "./prng.js";
 
 function runif(lo, hi, rng) {
   return lo + rng() * (hi - lo);
@@ -54,13 +45,7 @@ function generateSimplexForPts(pts, extent, seed) {
   const noises = [];
   for (let o = 0; o < octaves; o++) {
     const octaveSeed = (seed ^ 0xabcd) + o * 7919;
-    let s = octaveSeed | 0;
-    const prng = function () {
-      s = (s + 0x6d2b79f5) | 0;
-      let t = Math.imul(s ^ (s >>> 15), 1 | s);
-      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-    };
+    const prng = mulberry32(octaveSeed);
     noises.push(createNoise2D(prng));
   }
 
@@ -97,13 +82,12 @@ export function buildHeightFieldFromVoronoi(
   template,
   terrainType,
 ) {
-  const rng = createRng(seed ^ 0xcafe);
+  const rng = mulberry32(seed ^ 0xcafe);
 
   // Generate voronoi cells
   const { centroids, cells } = generateVoronoiCells(extent, rng);
   const {
     adj: cellAdj,
-    hullSet,
     edgeSet,
     delaunay: cellDelaunay,
   } = buildCellAdjacency(centroids, extent);
@@ -168,7 +152,7 @@ export function buildHeightFieldFromVoronoi(
     })
     .filter(Boolean);
 
-  const { islandGroups } = processVoronoiCommands(
+  processVoronoiCommands(
     commands,
     cells,
     centroids,
@@ -208,7 +192,7 @@ export function buildHeightFieldFromVoronoi(
     }
   }
 
-  return { heights, pts, islandGroups, centroids, cells, cellDelaunay, cellAdj, cellIndexForPoint };
+  return { heights, pts, centroids, cells, cellDelaunay, cellAdj, cellIndexForPoint };
 }
 
 /**
@@ -224,7 +208,7 @@ export function buildDisplayFromState(state) {
     baseTemp,
     cityCount,
   } = state;
-  const rng = createRng(seed);
+  const rng = mulberry32(seed);
   const areaRatio = (extent.width / 320) ** 2;
   const npts = Math.max(3000, Math.floor((15000 + rng() * 5000) * areaRatio));
 
