@@ -15,12 +15,8 @@ perilous3d/
 ├── README.md           # full architecture + algorithm notes
 ├── AGENTS.md           # 🤖 you are here
 └── src/
-    ├── prng.js      # seedFromString (legacy, kept for main.js)
-    ├── noise.js     # Perlin + FractalNoise (retained, unused by current pipeline)
-    ├── grid.js      # Vec2, hex grid, DCEL (retained, unused by current pipeline)
-    ├── raisers.js   # Skeleton/midpoint-displacement raisers (retained, unused)
     ├── core/
-    │   ├── state.js          # RegionState + DisplayData JSDoc typedefs
+    │   ├── prng.js         # mulberry32 PRNG + seedFromString — consolidated PRNG utilities
     │   ├── voronoi.js        # Voronoi cell generation, point-to-cell lookup, cell adjacency
     │   ├── terrain_commands.js  # Voronoi command execution: BFS fill, line walking, cardinal filtering
     │   └── terrain_builder.js   # Voronoi pipeline orchestrator: commands → cell tagging → simplex → height mapping → biomes → display
@@ -31,43 +27,43 @@ perilous3d/
     │   ├── terrain.js      # buildRegion() — entry point. Calls buildDisplayFromState() from terrain_builder.js,
     │   │                    # then mountain peaks + resolveFeatures + generatePeoples.
     │   │                    # Returns { display, state } where display = geometry data, state = feature placements.
-    │   │                    # Exports: buildRegion, createRng, findMountainPeaks
+    │   │                    # Exports: buildRegion, createRng (re-export of mulberry32), findMountainPeaks
     │   ├── biomes.js        # Biome pipeline: buildBiomes(h, ctx) − sink fill → temperature → rivers → moisture → biome matrix
     │   │                    # Helpers: downhill, zero, fillSinks, computeTemperature, biomeFromMatrix,
     │   │                    # computeMoisture, computeRivers, computeHabitability
-    │       ├── features.js      # Feature generation + resolution (all feature work):
+    │   ├── features.js      # Feature generation + resolution (all feature work):
     │   │                    # generateFeatures(safety, extentSize, rng) — rolls 8+2d8 narrative features
     │   │                    # resolveFeatures({...}) — voronoi cell-based assignment + placement for
     │   │                    #   cities/towns/ruins/trouble/resources/narrative features/outposts/
     │   │                    #   landmarks/factions/hazards/obstacles/areas
     │   │                    # Exports: resolveFeatures, generateFeatures, generatePlaceName,
     │   │                    #   computeNearResource
-    │   └── coast.js         # Chaikin smoothing (retained, unused by current pipeline)
-    ├── mesh/mesher.js    # Delaunay triangles → indexed THREE.BufferGeometry + vertex colors
-    │                    #   + river mesh (LineSegments)
-    │                    #   + settlements: cities (keep+tower+roof) and towns (smaller hut/roof)
-    │                    #   + resources: gold octahedron markers floating above deposit sites
-    │                    #   + ruins: clustered stone pillars
-    │                    #   + minor ruins: tall gray obelisks
-    │                    #   + trouble: inverted red pyramids marking danger sites
-    │                    #   + site features: outpost tower, cyan landmark pillar, orange hazard pyramid,
-    │                    #     amber obstacle/area pillars
-    ├── mesh/colors.js    # PS terrain palette (used by mountain & hill tile color palettes)
+    ├── mesh/
+    │   ├── mesher.js    # Delaunay triangles → indexed THREE.BufferGeometry + vertex colors
+    │   │                    #   + river mesh (LineSegments)
+    │   │                    #   + settlements: cities (keep+tower+roof) and towns (smaller hut/roof)
+    │   │                    #   + resources: gold octahedron markers floating above deposit sites
+    │   │                    #   + ruins: clustered stone pillars
+    │   │                    #   + minor ruins: tall gray obelisks
+    │   │                    #   + trouble: inverted red pyramids marking danger sites
+    │   │                    #   + site features: outpost tower, cyan landmark pillar, orange hazard pyramid,
+    │   │                    #     amber obstacle/area pillars
+    │   ├── colors.js    # PS terrain palette (used by mountain & hill tile color palettes)
+    │   ├── mesh_noise.js    # Seeded Perlin noise, FBM, domain warp (from meshDev)
+    │   ├── mesh_mountain.js # Mountain tile generator + vertex-colored mesh builder
+    │   ├── mesh_terrain.js  # Hill & dune tile generators + mesh builders
+    │   ├── mesh_tree.js     # Tree (5 presets) + forest (InstancedMesh) generators
+    │   └── mesh_features.js # Integration: places meshDev mountains & forests on terrain;
+    │                       #   skips forest clusters within 5 km of any city or town so they stay visible
+    ├── people/
+    │   └── people.js       # generatePeoples() — regional population generation
+    ├── gui/
+    │   ├── gui.js         # lil-gui initialization: folders for Template, Parameters, Actions, Info
+    │   ├── items.js       # locations panel: category select (Cities, Towns, Resources, Dungeons,
+    │   │                     #   Ruins, Landmarks, Outposts, Hazards, Obstacles, Areas, Trouble, Factions)
+    │   │                     #   + clickable item list + fly-to camera + zoom out
+    │   └── ui.js        # progress overlay, seed display, URL sync (seed display element removed; seed now in GUI)
     ├── renderer.js  # scene, lights, clouds (Y=80-120), OrbitControls, render loop
-    ├── gui/ui.js        # progress overlay, seed display, URL sync (seed display element removed; seed now in GUI)
-    ├── mesh/mesh_noise.js    # Seeded Perlin noise, FBM, domain warp (from meshDev)
-    ├── mesh/mesh_mountain.js # Mountain tile generator + vertex-colored mesh builder
-    ├── mesh/mesh_terrain.js  # Hill & dune tile generators + mesh builders
-    ├── mesh/mesh_tree.js     # Tree (5 presets) + forest (InstancedMesh) generators
-    ├── mesh/mesh_features.js # Integration: places meshDev mountains & forests on terrain;
-    │                    #   skips forest clusters within 5 km of any city or town so they stay visible
-    ├── gui/gui.js         # lil-gui initialization: folders for Template, Parameters, Actions, Info
-    ├── gui/items.js       # locations panel: category select (Cities, Towns, Resources, Dungeons,
-    │                     #   Ruins, Landmarks, Outposts, Hazards, Obstacles, Areas, Trouble, Factions)
-    │                     #   + clickable item list + fly-to camera + zoom out
-    ├── terrain/features.js    # regional feature generator: 8+2d8 features per region,
-    │                     #   1d12+safety → creature/hazard/obstacle/area/named place/
-    │                     #   site/faction presence/settlement, each with sub-tables
     └── main.js         # bootstrap: parse URL / new seed → buildRegion → createScene → animate → initGUI
 ```
 
@@ -141,18 +137,9 @@ Seed → mulberry32 PRNG → random points scaled by map area (~3K min, ~15-20K 
 | `Trough` | `<pct> <start> <stop>` | Same as Range but tags cells as water (drains the line). |
 | `Scale` | `<multiplier>` | Sets terrainScale multiplier for hill/range heightRange. Applied as heightRange = 1.25 × scale. |
 
-### Old Pipeline (superseded, code retained)
+### Shared Pipeline
 
-The old pipeline (`generateSimplexBase` + `processTerrainCommands` + `IslandMask`) is still present in `terrain.js` but no longer used. It used:
-- `Scale`/`Rainfall`/`Radius`/`Ratio` state commands
-- `Hill`/`Pit`/`Range`/`Trough` uplift on simplex base
-- `Apply` to flush feature queue
-- `IslandMask` for Manhattan-distance island shaping
-- `TEMPLATE_SCRIPTS` and `TERRAIN_STATE_CMDS`
-
-### Shared Pipeline (same for both old and new)
-
-- **PRNG**: Mulberry32 (embedded in `terrain/terrain.js`), seeded from `seedFromString()` via `prng.js`
+- **PRNG**: Mulberry32 (in `src/core/prng.js`), seeded from `seedFromString()` (also in `prng.js`). All modules import `mulberry32` from `src/core/prng.js`.
 - **Triangulation**: d3-delaunay — points scale with map area (3K minimum, ~15–20K at 320 km, ~23–31K at 400 km) → indexed triangle mesh
 - **Rivers**: Downhill flow accumulation on the Delaunay graph (`computeRivers()`). Land points start with unit flow, accumulate downhill via sorted height traversal. Points in the top 10% of accumulated flow become river channels. River segments follow downhill edges between river points and are rendered as flat blue quads (width ∝ √flux).
 - **Moisture**: Azgaar-style two-phase computation. Phase A: BFS from rivers (10), ocean (8), and coast-adjacent land (7) with exponential decay (0.94× per hop inland). Phase B: neighbor averaging with river flux bonus.

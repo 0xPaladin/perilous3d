@@ -2,16 +2,7 @@ import * as THREE from 'three';
 import { generateMountainTile, createMountainTileMesh } from './mesh_mountain.js';
 import { generateHillTile, createTerrainTileMesh, HILL_PALETTE } from './mesh_terrain.js';
 import { generateForest } from './mesh_tree.js';
-
-function mulberry32(seed) {
-  let s = seed | 0;
-  return function() {
-    s = s + 0x6D2B79F5 | 0;
-    let t = Math.imul(s ^ s >>> 15, 1 | s);
-    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
-    return ((t ^ t >>> 14) >>> 0) / 4294967296;
-  };
-}
+import { mulberry32 } from '../core/prng.js';
 
 function hashFloat(x, y, seed) {
   let h = (seed * 9301 + 49297) % 233280;

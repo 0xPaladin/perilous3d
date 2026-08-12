@@ -1,4 +1,4 @@
-import { createRng } from "../terrain/terrain.js";
+import { mulberry32 } from "../core/prng.js";
 
 const PEOPLES = {
   Marine: "Water,Storm,Plains,Time/4,2,1,0.5",
@@ -283,7 +283,7 @@ function rollAlienVariation(rng, element) {
 }
 
 export function generatePeoples(seed, region) {
-  const rng = createRng(seed ^ 0xd0ce);
+  const rng = mulberry32(seed ^ 0xd0ce);
   const count = Math.floor(rng() * 2) + 1;
   const type = determinePeoplesType(region);
   const elements = parseElementEntry(PEOPLES[type]);

@@ -2,7 +2,7 @@
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { seedFromString } from './prng.js';
+import { seedFromString } from './core/prng.js';
 import { buildRegion } from './terrain/terrain.js';
 import { createScene, animate } from './renderer.js';
 import { progressPanel, updateSeedDisplay } from './gui/ui.js';
@@ -40,7 +40,7 @@ function generate(template, seedStr, terrain, climate, safety, size) {
   app.seed = seedNum;
   updateSeedDisplay(seedNum);
 
-  progressPanel.show(1, 4, 'create random island ...', template);
+  progressPanel.show(1, 4, 'create random terrain ...', template);
   progressPanel.show(2, 4, 'generating terrain ...', template);
   progressPanel.show(3, 4, 'planting forests ...', template);
   progressPanel.show(4, 4, 'finishing ...', template);

@@ -65,7 +65,7 @@ function bfsFill(startIdx, targetCount, cells, adj, validFn) {
 
 function isLand(cell) { return cell.type === 'land' || cell.type === 'hill' || cell.type === 'range'; }
 
-function lineCellsBetween(startLoc, stopLoc, cells, centroids, extent, cellDelaunay) {
+function lineCellsBetween(startLoc, stopLoc, extent, cellDelaunay) {
   const sw = extent.width / 2;
   const sh = extent.height / 2;
   const sx = startLoc.nx * sw;
@@ -99,8 +99,6 @@ function lineCellsBetween(startLoc, stopLoc, cells, centroids, extent, cellDelau
  */
 export function processVoronoiCommands(commands, cells, centroids, adj, edgeSet, rng, extent, cellDelaunay) {
   const n = cells.length;
-
-  const totalCells = n;
 
   function cellDirScore(idx, dir) {
     const [cx, cz] = centroids[idx];
@@ -296,7 +294,7 @@ export function processVoronoiCommands(commands, cells, centroids, adj, edgeSet,
         const stopLoc = parseNamedLocation(cmd.stop);
         if (!startLoc || !stopLoc) break;
 
-        const pathCells = lineCellsBetween(startLoc, stopLoc, cells, centroids, extent, cellDelaunay);
+        const pathCells = lineCellsBetween(startLoc, stopLoc, extent, cellDelaunay);
         const traverseCount = Math.max(1, Math.round(cmd.pct * pathCells.length));
         let traversed = 0;
 

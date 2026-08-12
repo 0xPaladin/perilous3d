@@ -1,4 +1,4 @@
-import { createRng } from './terrain.js';
+import { mulberry32 } from '../core/prng.js';
 import { TROUBLE_TYPES, RESOURCE_TYPES, RESOURCE_BIOME_WEIGHT, MAGIC_TYPES, ELEMENTS, FACTION_TYPES, PRIMARY_GOALS, CONDITIONS, PLACE_NAMES, PLACE_ADJECTIVES, PLACE_NOUNS, SITE_LAIR_TYPES, SITE_RUIN_TYPES, SITE_OUTPOST_TYPES, SITE_LANDMARK_TYPES, SITE_RESOURCE_TYPES } from './config.js';
 
 function d(rng, sides) {
@@ -416,7 +416,7 @@ function generateCellAssignments(rng, cells, cellAdj, cityCount, areaRatio) {
 // ---- Cell-based resource placement ----
 
 function placeResourcesInCells(assignedCells, pts, h, waterLevel, biome, maxLandH, cellPoints, cellAdj, rngSeed) {
-  const rng = createRng(rngSeed ^ 0xFACE);
+  const rng = mulberry32(rngSeed ^ 0xFACE);
   const types = RESOURCE_TYPES.sort(() => rng() - 0.5).slice(0, assignedCells.length);
   const chosen = [];
   const MIN_DIST_SQ = 20 * 20;
