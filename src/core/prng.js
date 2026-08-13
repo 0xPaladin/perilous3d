@@ -12,6 +12,7 @@
  * @returns {function(): number} A function that returns a float in [0, 1)
  */
 export function mulberry32(seed) {
+  seed = typeof seed === "string" ? seedFromString(seed) : seed;
   let s = seed | 0;
   return function () {
     s = (s + 0x6d2b79f5) | 0;

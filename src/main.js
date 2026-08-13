@@ -1,14 +1,15 @@
-// main.js — bootstrap: PRNG seed → terrain generation → Three.js scene → render loop
+// main.js — bootstrap: PRNG seed → terrain/site generation → Three.js scene or ASCII map → render loop
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { seedFromString } from './core/prng.js';
 import { buildRegion } from './terrain/terrain.js';
+import { generateSite } from './sites/index.js';
 import { createScene, animate } from './renderer.js';
 import { progressPanel, updateSeedDisplay } from './gui/ui.js';
 import { initGUI } from './gui/gui.js';
 import { initItemsPanel } from './gui/items.js';
-import { showAsciiMap, hideAsciiMap } from './gui/ascii.js';
+import { showAsciiMap, showAsciiSite, hideAsciiMap } from './gui/ascii.js';
 
 
 progressPanel.init();
@@ -113,6 +114,60 @@ function generate(template, seedStr, terrain, climate, safety, size, numPoints =
   logRegionStats(display, state, url.searchParams.toString());
 }
 
+function generateSiteWrapper(opts) {
+  app.seedStr = opts.seed;
+  const seed = seedFromString(opts.seed);
+  const seedNum = seed.toString(36).toUpperCase();
+  app.seed = seedNum;
+  updateSeedDisplay(seedNum);
+
+  progressPanel.show(1, 2, 'generating site ...', opts.template);
+  progressPanel.show(2, 2, 'finishing ...', opts.template);
+
+  const canvas = document.getElementById('container');
+  canvas.innerHTML = '';
+
+  let result;
+  try {
+    result = generateSite(opts);
+  } catch (e) {
+    console.error('site generation failed:', e);
+    progressPanel.hide();
+    return;
+  }
+
+  progressPanel.hide();
+
+  const oldCanvas = canvas.querySelector('canvas');
+  if (oldCanvas) oldCanvas.remove();
+
+  const { display, state } = result;
+  logSiteStats(display, state);
+
+  app.display = display;
+  app.state = state;
+
+  // Site is ASCII-only — always show ASCII map
+  hideAsciiMap();
+  if (app.sceneState) {
+    if (app.sceneState.stopAnimate) app.sceneState.stopAnimate();
+    app.sceneState.renderer?.domElement?.remove();
+    app.sceneState = null;
+  }
+  showAsciiSite(display, state, 1);
+  initItemsPanel(app);
+
+  // URL sync
+  const url = new URL(window.location);
+  url.searchParams.set('scope', 'site');
+  url.searchParams.set('seed', seedNum);
+  url.searchParams.set('site-template', opts.template);
+  url.searchParams.set('site-w', opts.w);
+  url.searchParams.set('site-h', opts.h);
+  url.searchParams.set('site-floors', opts.floors);
+  history.replaceState({}, '', url);
+}
+
 const BIOME_NAMES = [
   'Marine', 'Hot desert', 'Cold desert', 'Savanna', 'Grassland',
   'Tropical seasonal forest', 'Temperate deciduous forest', 'Tropical rainforest',
@@ -159,8 +214,20 @@ function logRegionStats(display, state, params) {
   }
 }
 
+function logSiteStats(display, state, params) {
+  console.log('=== Site Stats ===');
+  console.log('Parameters: ', params);
+  console.log('Template:', state.template);
+  console.log('Size:', `${state.width} x ${state.height}`);
+  console.log('Floors:', state.floors);
+  console.log('Rooms:', state.rooms.length);
+  console.log('Doors:', state.doors.length);
+  console.log('Stairs:', state.stairs.length);
+}
+
 // Load URL seed or generate new
 const urlParams = new URLSearchParams(window.location.search);
+const initialScope = urlParams.get('scope') || 'terrain';
 const initialTemplate = urlParams.get('template') || 'island';
 const initialTerrain = urlParams.get('terrain') || 'highland';
 let initialClimate = urlParams.get('climate') || 'Temperate';
@@ -171,11 +238,17 @@ const initialFeaturesEnabled = urlParams.get('features') !== '0';
 const initialDisplayMode = urlParams.get('display') || '3d';
 const initialTileSize = urlParams.get('tileSize') ? parseInt(urlParams.get('tileSize'), 10) : 10;
 const initialSeed = urlParams.get('seed') || (Math.random().toString(36).substring(2, 10) + Date.now().toString(36));
+const initialSiteTemplate = urlParams.get('site-template') || 'hideout';
+const initialSiteW = urlParams.get('site-w') ? parseInt(urlParams.get('site-w'), 10) : 40;
+const initialSiteH = urlParams.get('site-h') ? parseInt(urlParams.get('site-h'), 10) : 30;
+const initialSiteFloors = urlParams.get('site-floors') ? parseInt(urlParams.get('site-floors'), 10) : 1;
 
 // Init GUI
 const { gui, options } = initGUI({
   app,
   generate,
+  generateSite: generateSiteWrapper,
+  initialScope,
   initialTemplate,
   initialTerrain,
   initialClimate,
@@ -185,6 +258,20 @@ const { gui, options } = initGUI({
   initialFeaturesEnabled,
   initialDisplayMode,
   initialTileSize,
+  initialSiteTemplate,
+  initialSiteW,
+  initialSiteH,
+  initialSiteFloors,
 });
 
-generate(initialTemplate, initialSeed, initialTerrain, initialClimate, initialSafety, initialSize, initialNumPoints, initialFeaturesEnabled, initialDisplayMode, initialTileSize);
+if (initialScope === 'site') {
+  generateSiteWrapper({
+    seed: initialSeed,
+    template: initialSiteTemplate,
+    w: initialSiteW,
+    h: initialSiteH,
+    floors: initialSiteFloors,
+  });
+} else {
+  generate(initialTemplate, initialSeed, initialTerrain, initialClimate, initialSafety, initialSize, initialNumPoints, initialFeaturesEnabled, initialDisplayMode, initialTileSize);
+}

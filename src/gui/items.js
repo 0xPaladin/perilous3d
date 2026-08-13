@@ -36,6 +36,50 @@ export function initItemsPanel(app) {
   const state = app.state;
   if (!state) return;
 
+  // Site mode — show rooms, doors, stairs instead of terrain locations
+  if (state.template && state.rooms) {
+    panel.innerHTML = `
+      <div class="ip-header">Site: ${state.template}</div>
+      <select id="ip-category">
+        <option value="">Select category...</option>
+        <option value="rooms">Rooms</option>
+        <option value="doors">Doors</option>
+        <option value="stairs">Stairs</option>
+      </select>
+      <div id="ip-list"></div>
+    `;
+    const siteSelect = document.getElementById('ip-category');
+    const siteListEl = document.getElementById('ip-list');
+
+    const siteItems = {
+      rooms: state.rooms || [],
+      doors: state.doors || [],
+      stairs: state.stairs || [],
+    };
+
+    siteSelect.addEventListener('change', () => {
+      const cat = siteSelect.value;
+      if (!cat || !siteItems[cat].length) {
+        siteListEl.innerHTML = siteItems[cat] && siteItems[cat].length === 0 ? '<div class="ip-empty">None</div>' : '';
+        return;
+      }
+      let html = '';
+      for (let i = 0; i < siteItems[cat].length; i++) {
+        const item = siteItems[cat][i];
+        let label;
+        if (cat === 'rooms') {
+          label = `Room ${i + 1}: [${item[0]},${item[1]}] - [${item[2]},${item[3]}]`;
+        } else {
+          label = `${cat === 'doors' ? 'Door' : 'Stairs'} ${i + 1}: (${item[0]}, ${item[1]})`;
+        }
+        html += `<div class="ip-item">${label}</div>`;
+      }
+      siteListEl.innerHTML = html;
+    });
+
+    return;
+  }
+
   const items = {
     cities: state.cities || [],
     towns: state.towns || [],

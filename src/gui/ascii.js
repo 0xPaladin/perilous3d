@@ -1,10 +1,12 @@
 import { BIOME_GLYPHS, BIOME_GLYPHS_BY_INDEX, BIOME_NAMES } from "../terrain/config.js";
+import { SITE_GLYPHS, CELL } from "../sites/index.js";
 
 let rotDisplay = null;
 let rotContainer = null;
 let legendEl = null;
 let displayCols = 0;
 let displayRows = 0;
+let currentMode = 'terrain'; // 'terrain' or 'site'
 
 const FEATURE_GLYPHS = {
   city: { ch: "@", color: "#ffff00" },
@@ -97,9 +99,7 @@ function createDisplay(cols, rows) {
     height: rows,
     fontSize: fontSize,
     fontFamily: "monospace",
-    forceCellSize: true,
-    cellWidth: fontSize + 2,
-    cellHeight: fontSize + 4,
+    forceSquareRatio: true,
     bg: "#000",
   });
 
@@ -208,6 +208,71 @@ export function showAsciiMap(display, state, tileSize) {
   }
 
   buildLegend();
+}
+
+function buildSiteLegend() {
+  if (!legendEl) {
+    legendEl = document.createElement("div");
+    legendEl.id = "ascii-legend";
+    rotContainer.appendChild(legendEl);
+  }
+
+  let html = "";
+  html += `<span style="color:${SITE_GLYPHS[CELL.WALL].color}">${SITE_GLYPHS[CELL.WALL].ch} Wall</span>`;
+  html += `<span style="color:${SITE_GLYPHS[CELL.FLOOR].color}">${SITE_GLYPHS[CELL.FLOOR].ch} Floor</span>`;
+  html += `<span style="color:${SITE_GLYPHS[CELL.DOOR].color}">${SITE_GLYPHS[CELL.DOOR].ch} Door</span>`;
+  html += `<span style="color:${SITE_GLYPHS[CELL.STAIRS].color}">${SITE_GLYPHS[CELL.STAIRS].ch} Stairs</span>`;
+  legendEl.innerHTML = html;
+}
+
+export function showAsciiSite(display, state, tileSize) {
+  const container = ensureContainer();
+  container.style.display = "block";
+  currentMode = 'site';
+
+  const { cols, rows, grid, walls } = display;
+
+  if (!rotDisplay || displayCols !== cols || displayRows !== rows) {
+    createDisplay(cols, rows);
+  }
+  rotDisplay.clear();
+
+  // Draw floor/wall/door/stairs cells
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const cellType = grid[r][c];
+      const glyphInfo = SITE_GLYPHS[cellType] || SITE_GLYPHS[CELL.WALL];
+      rotDisplay.draw(c, r, glyphInfo.ch, glyphInfo.color, glyphInfo.bg);
+    }
+  }
+
+  // Draw wall lines for organic floorplans (walls are line segments)
+  if (walls && walls.length > 0) {
+    const canvas = rotDisplay.getContainer();
+    if (canvas) {
+      const ctx = canvas.getContext('2d');
+      const fontSize = parseInt(getComputedStyle(canvas).fontSize) || 12;
+      const charWidth = fontSize;
+      const charHeight = fontSize;
+
+      ctx.strokeStyle = SITE_GLYPHS[CELL.WALL].color;
+      ctx.lineWidth = Math.max(1, charWidth * 0.15);
+      ctx.lineCap = 'square';
+
+      for (const [x1, y1, x2, y2] of walls) {
+        const px1 = x1 * charWidth;
+        const py1 = y1 * charHeight;
+        const px2 = x2 * charWidth;
+        const py2 = y2 * charHeight;
+        ctx.beginPath();
+        ctx.moveTo(px1, py1);
+        ctx.lineTo(px2, py2);
+        ctx.stroke();
+      }
+    }
+  }
+
+  buildSiteLegend();
 }
 
 export function hideAsciiMap() {

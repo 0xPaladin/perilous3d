@@ -61,6 +61,20 @@ perilous3d/
     │                       #   skips forest clusters within 5 km of any city or town so they stay visible
     ├── people/
     │   └── people.js       # generatePeoples() — regional population generation
+    ├── sites/
+    │   ├── index.js        # generateSite(opts) — entry point for site generation.
+    │   │                    #   Returns { display, state } where display = { cols, rows, grid, width, height, walls }
+    │   │                    #   (2D cell-type grid for ASCII rendering + wall line segments for organic floorplans)
+    │   │                    #   and state = { template, floors, currentFloor, rooms, doors, stairs, walls }.
+    │   │                    #   Templates: hideout (organic random walk), bandit-camp/lair (cellular automata),
+    │   │                    #   warehouse (fill floor plan), dungeon (ROT.Map.Digger).
+    │   │                    #   Exports: generateSite, SITE_GLYPHS, CELL
+    │   ├── floorplan.js    # generateOrganicFloorPlan(seed, mapWidth, mapHeight, options?) — random walk on unit grid
+    │   │                    #   Output: { rooms: string[], doors: [x,y][], walls: [x1,y1,x2,y2][] }
+    │   │                    #   Rooms are cell IDs ("x,y"), walls are line segments for canvas rendering.
+    │   ├── fill-floorplan.js # generateFillFloorPlan(seed, shape) — rectangle/circle tiling with no gaps,
+    │   │                        #   randomized spanning tree connectivity.
+    │   └── room.js         # Room class for ROT.js-style rectangular room rendering (used by digger/dungeon)
     ├── gui/
     │   ├── gui.js         # lil-gui initialization: folders for Template, Parameters, Display, Actions, Info
     │   ├── items.js       # locations panel: category select (Cities, Towns, Resources, Dungeons,
@@ -84,6 +98,7 @@ perilous3d/
 - **mesh/mesh_features.js** places meshDev 3D meshes on the terrain surface using the `mounts` array for peak positions and nearest-neighbor terrain height lookup; skips forest clusters within **5 km** of any city or town so they stay visible
 - **mesh/mesh_mountain.js**, **mesh/mesh_terrain.js**, **mesh/mesh_tree.js** use `MeshStandardMaterial` with `flatShading: true`, `vertexColors: true`; import `three` via importmap
 - No external APIs, no build tooling, no bundler — keep it that way unless asked
+- **Site generation** (`src/sites/index.js`): `generateSite(opts)` returns `{ display, state }` matching the `buildRegion()` shape. `display` = `{ cols, rows, grid, width, height }` where `grid` is a 2D array of cell-type codes (0=wall, 1=floor, 2=door, 3=stairs). `state` = `{ template, floors, currentFloor, rooms, doors, stairs, width, height }`. Site generation is ASCII-only — 3D rendering is not available for sites. The `CELL` enum and `SITE_GLYPHS` map are exported for ASCII rendering.
 
 ## Key Extension Points
 
@@ -103,6 +118,9 @@ perilous3d/
 | Tune feature resolution logic    | `terrain/features.js` → `resolveFeatures()` — voronoi cell-based assignment; receives cells, cellAdj, cellIndexForPoint, pts, h, biome, habitability, etc. via destructured params                                                                     |
 | Give generated places names      | `terrain/features.js` exports `generatePlaceName(rng)`; `resolveFeatures()` uses it for ruins, landmarks, dungeons, named places                                                           |
 | Generate regional features       | `terrain/features.js` → `generateFeatures(safety, extentSize, rng)` — 8+2d8 rolls of 1d12+safety                                                                                        |
+| Generate site maps               | `src/sites/index.js` → `generateSite(opts)` — calls `generateMultiFloorPlan` (hideout), `ROT.Map.Cellular` (bandit-camp/lair), `generateFillFloorPlan` (warehouse), `ROT.Map.Digger` (dungeon) |
+| Tune site room sizes             | `src/sites/floorplan.js` → `generateMultiFloorPlan()` options: `minLeafSize`, `minRoomSize`, `padding`, `maxDepth`, `stopProb`, `stairCount`                                               |
+| Tune site fill density           | `src/sites/fill-floorplan.js` → `generateFillFloorPlan()` options: `minRoomSize`, `maxDepth`, `stopProb`, `extraConnectionChance`                                                         |
 
 ## Algorithm Notes
 
@@ -187,7 +205,8 @@ Seed → mulberry32 PRNG → random points scaled by map area (~3K min, ~15-20K 
   - Features (cities `@`, towns `+`, ruins `R`, resources `*`, trouble `!`, outposts `O`, landmarks `L`, hazards `H`, obstacles `X`, areas `A`, factions `F`, etc.) overlay the biome glyphs with their own colored characters.
   - A legend below the map shows all biome and feature glyphs with their colors.
 - **`hideAsciiMap()`** — hides the ROT.js container and restores the FPS overlay when switching back to 3D mode.
-- **`gui/gui.js`** — Display folder with `displayMode` dropdown (`3d` / `ascii`) and `tileSize` slider (5–80 km, enabled only in ASCII mode).
+- **`showAsciiSite(display, state, tileSize)`** — renders a site (dungeon/hideout/etc.) as a ROT.Display grid. Each cell is drawn using `SITE_GLYPHS` from `src/sites/index.js` (wall `#`, floor `.`, door `+`, stairs `>`). A site-specific legend is shown below the grid.
+- **`gui/gui.js`** — Display folder with `displayMode` dropdown (`3d` / `ascii`) and `tileSize` slider (5–80 km, enabled only in ASCII mode). Scope dropdown (`terrain` / `site`) in the Display folder switches between terrain and site parameter folders.
 
 ### Scale
 
@@ -198,12 +217,14 @@ Seed → mulberry32 PRNG → random points scaled by map area (~3K min, ~15-20K 
 ### UI
 
 All user controls are powered by `lil-gui` (`src/gui/gui.js`). The GUI is initialized by `main.js` and exposes:
-- **Template** folder: map template dropdown (island, archipelago, coast, lake, land)
-- **Parameters** folder: Terrain (wetland/lowland/woodland/highland/wasteland), Climate (Arctic/Sub-arctic/Temperate/Sub-tropical/Tropical), Safety (Perilous/Dangerous/Unsafe/Safe → 0/1/2/3 cities), Map Size (50–400 km), Points (0=auto), Place Features (toggle)
-- **Display** folder: Display Mode dropdown (`3d` / `ascii`), Tile Size slider (5–80 km, enabled only in ASCII mode)
+- **Display** folder: Scope dropdown (`terrain` / `site`), Display Mode dropdown (`3d` / `ascii`), Tile Size slider (5–80 km, enabled only in ASCII mode). When Scope=Site, Display Mode is locked to ASCII and Tile Size is disabled.
+- **Parameters** folder (terrain): Terrain (wetland/lowland/woodland/highland/wasteland), Climate (Arctic/Sub-arctic/Temperate/Sub-tropical/Tropical), Safety (Perilous/Dangerous/Unsafe/Safe → 0/1/2/3 cities), Map Size (50–400 km), Points (0=auto), Place Features (toggle)
+- **Parameters** folder (site): Template (hideout, bandit-camp, lair, warehouse, dungeon), Width (10–256), Height (10–256), Floors (1–10)
 - **Actions** folder: New Region, Update (re-draw with same seed + current GUI params)
 - **Info** folder: read-only Seed display (auto-updates on generation)
 
-A **Locations panel** (`gui/items.js`) sits on the left with a category select (Cities, Towns, Resources, Dungeons, Ruins, Landmarks, Outposts, Hazards, Obstacles, Areas, Trouble), a clickable item list (fly-to camera on click), and a Zoom Out button. Dungeons, Ruins, Landmarks display generated names where available. Hazards/obstacles/areas display their type; trouble displays danger type; factions display faction type and are bound to a random city/town.
+When Scope=Site, the terrain Parameters folder is hidden and the site Parameters folder is shown. The Generate flow calls `generateSite()` instead of `buildRegion()`, and the ASCII renderer draws the site grid using `SITE_GLYPHS`.
+
+A **Locations panel** (`gui/items.js`) sits on the left with a category select (Cities, Towns, Resources, Dungeons, Ruins, Landmarks, Outposts, Hazards, Obstacles, Areas, Trouble), a clickable item list (fly-to camera on click), and a Zoom Out button. In site mode, the panel shows Rooms, Doors, and Stairs lists instead. Dungeons, Ruins, Landmarks display generated names where available. Hazards/obstacles/areas display their type; trouble displays danger type; factions display faction type and are bound to a random city/town.
 
 The FPS counter remains as a DOM overlay in the bottom-right corner (`index.html`) and is hidden when ASCII mode is active, while the seed display was removed from DOM and moved into the GUI Info panel.
