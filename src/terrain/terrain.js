@@ -3,7 +3,9 @@ import { generatePeoples } from '../people/people.js';
 import { buildDisplayFromState } from '../core/terrain_builder.js';
 import { mulberry32 } from '../core/prng.js';
 
-export { mulberry32 as createRng };
+const createRng = mulberry32;
+export { createRng };
+
 
 export function findMountainPeaks(pts, heights, waterLevel, heightMax, adj, extent, biome) {
   const HILL_THRESHOLD = 0.65;
@@ -41,13 +43,13 @@ export function findMountainPeaks(pts, heights, waterLevel, heightMax, adj, exte
   return mounts;
 }
 
-export function buildRegion(template, cols, rows, seed, terrainType, baseTemp = 22, cityCount = 0, extentSize = 320, waterLevel = 0) {
+export function buildRegion(template, seed, terrainType, baseTemp = 22, cityCount = 0, extentSize = 320, numPoints = 0, featuresEnabled = true) {
   const rng = createRng(seed);
   const extent = { width: extentSize, height: extentSize };
   const areaRatio = (extentSize / 320) ** 2;
 
   // Build state object for voronoi pipeline
-  const state_in = { seed, extent, waterLevel, template, terrain: terrainType, baseTemp, cityCount };
+  const state_in = { seed, waterLevel: 0, extent, template, terrain: terrainType, baseTemp, cityCount, numPoints };
 
   // Run voronoi-based display builder
   const {
@@ -59,21 +61,26 @@ export function buildRegion(template, cols, rows, seed, terrainType, baseTemp = 
   voronoiDisplay.mounts = mounts;
   voronoiDisplay.mountainCount = mounts.length;
 
+  const emptyFeatures = {
+    resources: [], cities: [], towns: [], ruins: [], minorRuins: [],
+    trouble: [], features: [], outpostSites: [], landmarkSites: [],
+    factionSites: [], hazards: [], obstacles: [], areas: [],
+  };
   const {
-    resources,
-    cities,
-    towns,
-    ruins,
-    minorRuins,
-    trouble,
-    features,
-    outpostSites,
-    landmarkSites,
-    factionSites,
-    hazards,
-    obstacles,
-    areas,
-  } = resolveFeatures({
+    resources = [],
+    cities = [],
+    towns = [],
+    ruins = [],
+    minorRuins = [],
+    trouble = [],
+    features = [],
+    outpostSites = [],
+    landmarkSites = [],
+    factionSites = [],
+    hazards = [],
+    obstacles = [],
+    areas = [],
+  } = featuresEnabled ? resolveFeatures({
     rng,
     pts,
     h,
@@ -91,14 +98,13 @@ export function buildRegion(template, cols, rows, seed, terrainType, baseTemp = 
     cells,
     cellAdj,
     cellIndexForPoint,
-  });
+  }) : emptyFeatures;
 
   const peoples = generatePeoples(seed, { template, terrain: terrainType, baseTemp });
 
   const regionState = {
     seed,
     extent,
-    waterLevel,
     template,
     terrain: terrainType,
     baseTemp,

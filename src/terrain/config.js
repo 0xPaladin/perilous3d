@@ -58,6 +58,56 @@ export const BIOMES_MATRIX = [
   ]),
 ];
 
+export const BIOME_NAMES = [
+    'Marine',
+    'Hot desert',
+    'Cold desert',
+    'Savanna',
+    'Grassland',
+    'Tropical seasonal forest',
+    'Temperate deciduous forest',
+    'Tropical rainforest',
+    'Temperate rainforest',
+    'Taiga',
+    'Tundra',
+    'Glacier',
+    'Wetland'
+];
+
+export const BIOME_GLYPHS = {
+  'Marine': { glyph: '~', type: 'marine', color: '#5f9ea0', passable: false, transparent: true },
+  'Hot desert': { glyph: '≈', type: 'hot desert', color: '#c4c56c', passable: true, transparent: true },
+  'Cold desert': { glyph: '^', type: 'cold desert', color: '#bba801', passable: true, transparent: true },
+  'Savanna': { glyph: ',', type: 'savanna', color: '#c4c71e', passable: true, transparent: true },
+  'Grassland': { glyph: ',', type: 'grassland', color: '#5b8c5a', passable: true, transparent: true },
+  'Tropical seasonal forest': { glyph: 't', type: 'forest', color: '#34af34', passable: true, transparent: false },
+  'Temperate deciduous forest': { glyph: '2', type: 'forest', color: '#2f5c2f', passable: true, transparent: false },
+  'Tropical rainforest': { glyph: 'T', type: 'rainforest', color: '#174917', passable: true, transparent: false },
+  'Temperate rainforest': { glyph: 'T', type: 'rainforest', color: '#145814', passable: true, transparent: false },
+  'Taiga': { glyph: '2', type: 'taiga', color: '#045a04', passable: true, transparent: true },
+  'Tundra': { glyph: '-', type: 'tundra', color: '#fafafa', passable: true, transparent: true },
+  'Glacier': { glyph: '=', type: 'glacier', color: '#80e2fa', passable: true, transparent: true },
+  'Wetland': { glyph: ':', type: 'wetland', color: '#0ca792', passable: true, transparent: true },
+  'Hill': { glyph: 'n', type: 'hill', color: '#d3950f', passable: true, transparent: true },
+  'Mountain': { glyph: '▲', type: 'mountain', color: '#9b9b9b', passable: true, transparent: true }
+};
+
+export const BIOME_GLYPHS_BY_INDEX = [
+  BIOME_GLYPHS['Marine'],
+  BIOME_GLYPHS['Hot desert'],
+  BIOME_GLYPHS['Cold desert'],
+  BIOME_GLYPHS['Savanna'],
+  BIOME_GLYPHS['Grassland'],
+  BIOME_GLYPHS['Tropical seasonal forest'],
+  BIOME_GLYPHS['Temperate deciduous forest'],
+  BIOME_GLYPHS['Tropical rainforest'],
+  BIOME_GLYPHS['Temperate rainforest'],
+  BIOME_GLYPHS['Taiga'],
+  BIOME_GLYPHS['Tundra'],
+  BIOME_GLYPHS['Glacier'],
+  BIOME_GLYPHS['Wetland'],
+];
+
 export const HABITABILITY = [0, 4, 10, 22, 30, 50, 100, 90, 80, 12, 4, 0, 12];
 
 export const TROUBLE_TYPES = [

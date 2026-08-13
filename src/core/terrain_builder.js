@@ -207,10 +207,11 @@ export function buildDisplayFromState(state) {
     terrain: terrainType,
     baseTemp,
     cityCount,
+    numPoints,
   } = state;
   const rng = mulberry32(seed);
   const areaRatio = (extent.width / 320) ** 2;
-  const npts = Math.max(3000, Math.floor((15000 + rng() * 5000) * areaRatio));
+  const npts = numPoints > 0 ? numPoints : Math.max(3000, Math.floor((15000 + rng() * 5000) * areaRatio));
 
   // 1. Random points + triangulation
   const pts = generatePoints(npts, extent, rng);

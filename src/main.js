@@ -8,6 +8,7 @@ import { createScene, animate } from './renderer.js';
 import { progressPanel, updateSeedDisplay } from './gui/ui.js';
 import { initGUI } from './gui/gui.js';
 import { initItemsPanel } from './gui/items.js';
+import { showAsciiMap, hideAsciiMap } from './gui/ascii.js';
 
 
 const app = { sceneState: null, seed: null, seedStr: null };
@@ -33,7 +34,7 @@ function tempToClimate(temp) {
 }
 
 
-function generate(template, seedStr, terrain, climate, safety, size) {
+function generate(template, seedStr, terrain, climate, safety, size, numPoints = 0, featuresEnabled = true, displayMode = '3d', tileSize = 10) {
   app.seedStr = seedStr;
   const seed = seedFromString(seedStr);
   const seedNum = seed.toString(36).toUpperCase();
@@ -53,7 +54,7 @@ function generate(template, seedStr, terrain, climate, safety, size) {
 
   let result;
   try {
-    result = buildRegion(template, 55, 55, seed, terrain, baseTemp, cityCount, size);
+    result = buildRegion(template, seed, terrain, baseTemp, cityCount, size, numPoints, featuresEnabled);
   } catch (e) {
     console.error('terrain generation failed:', e);
     progressPanel.hide();
@@ -70,9 +71,27 @@ function generate(template, seedStr, terrain, climate, safety, size) {
 
   app.display = display;
   app.state = state;
-  app.sceneState = createScene(canvas, display, state);
-  animate(app.sceneState);
-  initItemsPanel(app);
+
+  if (displayMode === 'ascii') {
+    hideAsciiMap();
+    if (app.sceneState) {
+      if (app.sceneState.stopAnimate) app.sceneState.stopAnimate();
+      app.sceneState.renderer?.domElement?.remove();
+      app.sceneState = null;
+    }
+    showAsciiMap(display, state, tileSize);
+    initItemsPanel(app);
+  } else {
+    hideAsciiMap();
+    if (app.sceneState) {
+      if (app.sceneState.stopAnimate) app.sceneState.stopAnimate();
+      app.sceneState.renderer?.domElement?.remove();
+    }
+    app.sceneState = createScene(canvas, display, state);
+    const stopAnimate = animate(app.sceneState);
+    app.sceneState.stopAnimate = stopAnimate;
+    initItemsPanel(app);
+  }
 
   const url = new URL(window.location);
   url.searchParams.set('template', template);
@@ -81,6 +100,12 @@ function generate(template, seedStr, terrain, climate, safety, size) {
   url.searchParams.set('climate', climate);
   url.searchParams.set('safety', safety);
   url.searchParams.set('size', size);
+  url.searchParams.set('display', displayMode);
+  url.searchParams.set('tileSize', tileSize);
+  if (numPoints > 0) url.searchParams.set('points', numPoints);
+  else url.searchParams.delete('points');
+  if (featuresEnabled) url.searchParams.set('features', '1');
+  else url.searchParams.delete('features');
   history.replaceState({}, '', url);
 
   logRegionStats(display, state, url.searchParams.toString());
@@ -139,6 +164,10 @@ const initialTerrain = urlParams.get('terrain') || 'highland';
 let initialClimate = urlParams.get('climate') || 'Temperate';
 const initialSafety = urlParams.get('safety') ? parseInt(urlParams.get('safety'), 10) : 0;
 const initialSize = urlParams.get('size') ? parseInt(urlParams.get('size'), 10) : 320;
+const initialNumPoints = urlParams.get('points') ? parseInt(urlParams.get('points'), 10) : 0;
+const initialFeaturesEnabled = urlParams.get('features') !== '0';
+const initialDisplayMode = urlParams.get('display') || '3d';
+const initialTileSize = urlParams.get('tileSize') ? parseInt(urlParams.get('tileSize'), 10) : 10;
 const initialSeed = urlParams.get('seed') || (Math.random().toString(36).substring(2, 10) + Date.now().toString(36));
 
 // Init GUI
@@ -150,6 +179,10 @@ const { gui, options } = initGUI({
   initialClimate,
   initialSafety,
   initialSize,
+  initialNumPoints,
+  initialFeaturesEnabled,
+  initialDisplayMode,
+  initialTileSize,
 });
 
-generate(initialTemplate, initialSeed, initialTerrain, initialClimate, initialSafety, initialSize);
+generate(initialTemplate, initialSeed, initialTerrain, initialClimate, initialSafety, initialSize, initialNumPoints, initialFeaturesEnabled, initialDisplayMode, initialTileSize);

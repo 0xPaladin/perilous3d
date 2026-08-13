@@ -171,8 +171,10 @@ export function animate({ scene, camera, renderer, controls, extentScale }) {
   const clock = new THREE.Clock();
   let frameCount = 0;
   let lastFpsUpdate = performance.now();
+  let running = true;
 
   function step() {
+    if (!running) return;
     requestAnimationFrame(step);
     const dt = clock.getDelta();
     controls.update();
@@ -193,12 +195,14 @@ export function animate({ scene, camera, renderer, controls, extentScale }) {
     const now = performance.now();
     if (now - lastFpsUpdate > 1000) {
       const fps = Math.round(frameCount * 1000 / (now - lastFpsUpdate));
-      document.getElementById('fps').textContent = fps + ' fps';
+      const fpsEl = document.getElementById('fps');
+      if (fpsEl) fpsEl.textContent = fps + ' fps';
       frameCount = 0;
       lastFpsUpdate = now;
     }
   }
   step();
+  return () => { running = false; };
 }
 
 
