@@ -11,7 +11,10 @@ Browser-based procedural terrain generator with **cartoon-style mountains** on a
 ```
 perilous3d/
     ├── index.html          # shell with import maps (three, d3-delaunay, lil-gui, simplex-noise) + inline CSS + UI chrome
+    │                       #   loads lib/rot.min.js (ROT.js) as a global for ASCII tile-display mode
     │                       #   d3-delaunay replaces delaunator; provides Delaunay triangulation + built-in Voronoi diagram
+├── lib/
+    │   └── rot.min.js   # minified ROT.js (v2.x) — roguelike toolkit for ASCII tile rendering (global `ROT`)
 ├── README.md           # full architecture + algorithm notes
 ├── AGENTS.md           # 🤖 you are here
 └── src/
@@ -23,7 +26,8 @@ perilous3d/
     ├── terrain/
     │   ├── config.js       # Constants: terrain/cmd maps, terrain rainfall/scaling, biome matrix, habitability, trouble/feature types,
     │   │                    # site tables, magic/elements/faction tables, place-name word lists,
-    │   │                    # VORONOI_TERRAIN_SCRIPTS and VORONOI_TEMPLATE_SCRIPTS
+    │   │                    # VORONOI_TERRAIN_SCRIPTS and VORONOI_TEMPLATE_SCRIPTS,
+    │   │                    # BIOME_NAMES, BIOME_GLYPHS, BIOME_GLYPHS_BY_INDEX (ASCII glyph/color per biome)
     │   ├── terrain.js      # buildRegion() — entry point. Calls buildDisplayFromState() from terrain_builder.js,
     │   │                    # then mountain peaks + resolveFeatures + generatePeoples.
     │   │                    # Returns { display, state } where display = geometry data, state = feature placements.
@@ -58,20 +62,23 @@ perilous3d/
     ├── people/
     │   └── people.js       # generatePeoples() — regional population generation
     ├── gui/
-    │   ├── gui.js         # lil-gui initialization: folders for Template, Parameters, Actions, Info
+    │   ├── gui.js         # lil-gui initialization: folders for Template, Parameters, Display, Actions, Info
     │   ├── items.js       # locations panel: category select (Cities, Towns, Resources, Dungeons,
     │   │                     #   Ruins, Landmarks, Outposts, Hazards, Obstacles, Areas, Trouble, Factions)
     │   │                     #   + clickable item list + fly-to camera + zoom out
+    │   ├── ascii.js       # ROT.js (ROT.Display) tile-based ASCII map renderer; biome glyphs with colors + feature overlays
     │   └── ui.js        # progress overlay, seed display, URL sync (seed display element removed; seed now in GUI)
     ├── renderer.js  # scene, lights, clouds (Y=80-120), OrbitControls, render loop
-    └── main.js         # bootstrap: parse URL / new seed → buildRegion → createScene → animate → initGUI
+    └── main.js         # bootstrap: parse URL / new seed → buildRegion → createScene/animate or showAsciiMap → initGUI
 ```
 
 ## Conventions
 
 - ES module syntax (`import`/`export`), one responsibility per file
-- **terrain/terrain.js** exports `buildRegion(template, cols, rows, seed, terrain, baseTemp, cityCount, extentSize = 320, waterLevel = 0)` → returns `{ display, state }` where `display` contains geometry (pts, triangles, heights, biome, rivers, mounts, etc.) and `state` contains configuration + resolved feature placements (cities, towns, resources, ruins, trouble, features, etc.)
+- **terrain/terrain.js** exports `buildRegion(template, seed, terrainType, baseTemp = 22, cityCount = 0, extentSize = 320, numPoints = 0, featuresEnabled = true)` → returns `{ display, state }` where `display` contains geometry (pts, triangles, heights, biome, rivers, mounts, etc.) and `state` contains configuration + resolved feature placements (cities, towns, resources, ruins, trouble, outpostSites, landmarkSites, factionSites, hazards, obstacles, areas, features, peoples)
 - `display.waterLevel` is always 0 for voronoi terrain — cell types determine water vs land (water cells ≤ 0, land cells > 0)
+- **ASCII glyph convention** (`terrain/config.js` → `BIOME_GLYPHS`, `BIOME_GLYPHS_BY_INDEX`): each biome maps to `{ glyph, type, color, passable, transparent }`. Glyph is the character rendered in the tile display; `color` is the CSS hex used as the tile background. Used by `gui/ascii.js` to render the ROT.js tile display.
+  - `Hill` and `Mountain` glyph entries exist for potential hill-specific tiles beyond biomes
 - **mesh/mesher.js** flattens terrain to `Y = 0.1` for land and `Y = 0.0` for water; river lines float above at `0.2` (land) / `0.05` (water); settlements render as procedural Three.js meshes added to a `settlements` group
 - Colors are linear RGB `[0-1]` floats; vertex colors assigned by Azgaar 5×26 biome matrix (temperature × moisture) → `BIOME_COLORS` lookup in `mesh/mesher.js`
 - **mesh/mesh_features.js** places meshDev 3D meshes on the terrain surface using the `mounts` array for peak positions and nearest-neighbor terrain height lookup; skips forest clusters within **5 km** of any city or town so they stay visible
@@ -83,7 +90,7 @@ perilous3d/
 | What you want to do              | Where to look                                                                                                                                                                             |
 | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Tune voronoi cell count          | `src/core/voronoi.js` → `generateVoronoiCells()` — `nCells = max(25, floor(25 × areaRatio))` at `extent.width`. Change the base or scaling factor.                                       |
-| Add/edit terrain presets         | `src/terrain/config.js` → `VORONOI_TERRAIN_SCRIPTS` — Land/Hill/Lake/Range/Trough command strings prepended per terrain type                                                              |
+| Add/edit terrain presets         | `src/terrain/config.js` → `VORONOI_TERRAIN_SCRIPTS` — `pre`/`post` command arrays per terrain type, applied around template commands                                                              |
 | Add/edit map templates           | `src/terrain/config.js` → `VORONOI_TEMPLATE_SCRIPTS` — command strings per template (island/archipelago/coast/lake/land)                                                                    |
 | Tune mountain peak count         | `terrain/terrain.js` → `findMountainPeaks()` — `maxMounts = max(5, round(25×areaRatio))` controls number of 3D mountain meshes; `HILL_THRESHOLD(0.65)` controls minimum prominence. Only glacier-biome cells qualify. |
 | Tune base noise frequency        | `src/core/terrain_builder.js` → `generateSimplexForPts()` — `baseFreq` (2.0), `exponent` (3), `persistence` (0.5), `lacunarity` (2.0)                                                     |
@@ -102,7 +109,7 @@ perilous3d/
 ### Voronoi Terrain Pipeline (current)
 
 ```
-Seed → mulberry32 PRNG → random points scaled by map area (~3K min, ~15-20K at 320 km)
+Seed → mulberry32 PRNG → random points scaled by map area (~3K min, ~15-20K at 320 km, ~23-31K at 400 km via `generatePoints(npts, extent, rng)` in `terrain_builder.js`)
   → d3-delaunay triangulation → adjacency graph
   → Voronoi cells (~25 at 50 km, scales with area) uniformly distributed across extent
   → Terrain preset (pre + post) + template → VORONOI_TERRAIN_SCRIPTS + VORONOI_TEMPLATE_SCRIPTS
@@ -170,6 +177,18 @@ Seed → mulberry32 PRNG → random points scaled by map area (~3K min, ~15-20K 
 - Trouble: inverted red pyramids
 - Site features: outpost tower, cyan landmark pillar, orange hazard pyramid, amber obstacle/area pillars
 
+### ASCII Tile Display (ROT.js)
+
+- **lib/rot.min.js** — ROT.js loaded globally as `window.ROT` via a `<script>` tag in `index.html`
+- **`gui/ascii.js`** — `showAsciiMap(display, state, tileSize)` creates a `ROT.Display` grid (width = cols, height = rows) where each cell is drawn via `display.draw(x, y, glyph, fgColor, bgColor)`.
+  - The map extent is divided into tiles of `tileSize` km (configurable 5–80 km via GUI).
+  - Each tile's biome is determined by nearest-neighbor search among the random points (spatial grid + BFS ring search).
+  - Biome glyphs and colors come from `BIOME_GLYPHS_BY_INDEX` in `terrain/config.js`.
+  - Features (cities `@`, towns `+`, ruins `R`, resources `*`, trouble `!`, outposts `O`, landmarks `L`, hazards `H`, obstacles `X`, areas `A`, factions `F`, etc.) overlay the biome glyphs with their own colored characters.
+  - A legend below the map shows all biome and feature glyphs with their colors.
+- **`hideAsciiMap()`** — hides the ROT.js container and restores the FPS overlay when switching back to 3D mode.
+- **`gui/gui.js`** — Display folder with `displayMode` dropdown (`3d` / `ascii`) and `tileSize` slider (5–80 km, enabled only in ASCII mode).
+
 ### Scale
 
 - Extent configurable 50–400 km (default 320)
@@ -180,10 +199,11 @@ Seed → mulberry32 PRNG → random points scaled by map area (~3K min, ~15-20K 
 
 All user controls are powered by `lil-gui` (`src/gui/gui.js`). The GUI is initialized by `main.js` and exposes:
 - **Template** folder: map template dropdown (island, archipelago, coast, lake, land)
-- **Parameters** folder: Terrain (wetland/lowland/woodland/highland/wasteland), Climate (Arctic/Sub-arctic/Temperate/Sub-tropical/Tropical), Safety (Perilous/Dangerous/Unsafe/Safe → 0/1/2/3 cities), Map Size (50–400 km)
-- **Actions** folder: New Island (new random seed), Update (re-draw with same seed + current GUI params)
+- **Parameters** folder: Terrain (wetland/lowland/woodland/highland/wasteland), Climate (Arctic/Sub-arctic/Temperate/Sub-tropical/Tropical), Safety (Perilous/Dangerous/Unsafe/Safe → 0/1/2/3 cities), Map Size (50–400 km), Points (0=auto), Place Features (toggle)
+- **Display** folder: Display Mode dropdown (`3d` / `ascii`), Tile Size slider (5–80 km, enabled only in ASCII mode)
+- **Actions** folder: New Region, Update (re-draw with same seed + current GUI params)
 - **Info** folder: read-only Seed display (auto-updates on generation)
 
 A **Locations panel** (`gui/items.js`) sits on the left with a category select (Cities, Towns, Resources, Dungeons, Ruins, Landmarks, Outposts, Hazards, Obstacles, Areas, Trouble), a clickable item list (fly-to camera on click), and a Zoom Out button. Dungeons, Ruins, Landmarks display generated names where available. Hazards/obstacles/areas display their type; trouble displays danger type; factions display faction type and are bound to a random city/town.
 
-The FPS counter remains as a DOM overlay in the bottom-right corner (`index.html`), while the seed display was removed from DOM and moved into the GUI Info panel.
+The FPS counter remains as a DOM overlay in the bottom-right corner (`index.html`) and is hidden when ASCII mode is active, while the seed display was removed from DOM and moved into the GUI Info panel.

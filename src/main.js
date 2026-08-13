@@ -11,6 +11,8 @@ import { initItemsPanel } from './gui/items.js';
 import { showAsciiMap, hideAsciiMap } from './gui/ascii.js';
 
 
+progressPanel.init();
+
 const app = { sceneState: null, seed: null, seedStr: null };
 
 const CLIMATE_TEMP = {

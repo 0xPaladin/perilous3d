@@ -51,7 +51,14 @@ export function initGUI({ app, generate, initialTemplate, initialTerrain, initia
     }
   }
 
-  displayModeController.onChange(updateTileSizeState);
+  function regenerate() {
+    generate(options.template, app.seedStr, options.terrain, options.climate, options.safety, options.size, options.points, options.features, options.displayMode, options.tileSize);
+  }
+
+  displayModeController.onChange((val) => {
+    updateTileSizeState();
+    generate(options.template, app.seedStr, options.terrain, options.climate, options.safety, options.size, options.points, options.features, val, options.tileSize);
+  });
 
   const actionsFolder = gui.addFolder('Actions');
   actionsFolder.add({

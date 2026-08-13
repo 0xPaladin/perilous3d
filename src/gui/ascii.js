@@ -1,47 +1,54 @@
-import { BIOME_GLYPHS_BY_INDEX } from '../terrain/config.js';
+import { BIOME_GLYPHS_BY_INDEX, BIOME_NAMES } from "../terrain/config.js";
 
-let asciiContainer = null;
-let asciiPre = null;
+let rotDisplay = null;
+let rotContainer = null;
+let legendEl = null;
+let displayCols = 0;
+let displayRows = 0;
+
+const FEATURE_GLYPHS = {
+  city: { ch: "@", color: "#ffff00" },
+  town: { ch: "+", color: "#ffaa00" },
+  ruins: { ch: "R", color: "#ffffff" },
+  minorRuins: { ch: "r", color: "#cccccc" },
+  resources: { ch: "*", color: "#ffd700" },
+  trouble: { ch: "!", color: "#ff5555" },
+  outpostSites: { ch: "O", color: "#00ffff" },
+  landmarkSites: { ch: "L", color: "#ff00ff" },
+  factionSites: { ch: "F", color: "#00ff00" },
+  hazards: { ch: "H", color: "#ff6600" },
+  obstacles: { ch: "X", color: "#cc8800" },
+  areas: { ch: "A", color: "#9966ff" },
+};
 
 function ensureContainer() {
-  if (asciiContainer) return;
-  asciiContainer = document.createElement('div');
-  asciiContainer.id = 'ascii-map';
-  asciiContainer.style.display = 'none';
-  asciiContainer.style.position = 'absolute';
-  asciiContainer.style.top = '0';
-  asciiContainer.style.left = '0';
-  asciiContainer.style.width = '100%';
-  asciiContainer.style.height = '100%';
-  asciiContainer.style.overflow = 'auto';
-  asciiContainer.style.background = '#000';
-  asciiContainer.style.zIndex = '5';
-  asciiContainer.style.fontFamily = 'monospace';
-  asciiContainer.style.fontSize = '14px';
-  asciiContainer.style.lineHeight = '1';
-  asciiContainer.style.letterSpacing = '0';
-  asciiContainer.style.textAlign = 'center';
-  asciiContainer.style.padding = '20px';
-  asciiContainer.style.overflow = 'auto';
-  asciiContainer.style.maxHeight = '100vh';
-  document.body.appendChild(asciiContainer);
-  asciiPre = document.createElement('pre');
-  asciiPre.style.margin = '0 auto';
-  asciiPre.style.whiteSpace = 'pre';
-  asciiContainer.appendChild(asciiPre);
+  if (rotContainer) return rotContainer;
 
-  const fpsEl = document.getElementById('fps');
-  if (fpsEl) fpsEl.style.display = 'none';
+  rotContainer = document.createElement("div");
+  rotContainer.id = "ascii-map";
+  rotContainer.style.position = "absolute";
+  rotContainer.style.top = "0";
+  rotContainer.style.left = "0";
+  rotContainer.style.width = "100%";
+  rotContainer.style.height = "100%";
+  rotContainer.style.zIndex = "5";
+  rotContainer.style.overflow = "auto";
+  rotContainer.style.background = "#000";
+  rotContainer.style.fontFamily = "monospace";
+  rotContainer.style.display = "none";
+  document.body.appendChild(rotContainer);
+
+  const fpsEl = document.getElementById("fps");
+  if (fpsEl) fpsEl.style.display = "none";
+  return rotContainer;
 }
 
 function buildSpatialGrid(pts, cellSize) {
   const grid = new Map();
   for (let i = 0; i < pts.length; i++) {
-    const x = pts[i][0];
-    const y = pts[i][1];
-    const gx = Math.floor(x / cellSize);
-    const gy = Math.floor(y / cellSize);
-    const key = gx + ',' + gy;
+    const gx = Math.floor(pts[i][0] / cellSize);
+    const gy = Math.floor(pts[i][1] / cellSize);
+    const key = gx + "," + gy;
     let cell = grid.get(key);
     if (!cell) {
       cell = [];
@@ -63,18 +70,14 @@ function nearestInGrid(pts, grid, cellSize, x, y) {
     for (let dy = -ring; dy <= ring; dy++) {
       for (let dx = -ring; dx <= ring; dx++) {
         if (ring > 0 && Math.abs(dx) !== ring && Math.abs(dy) !== ring) continue;
-        const gx = gx0 + dx;
-        const gy = gy0 + dy;
-        const key = gx + ',' + gy;
+        const key = gx0 + dx + "," + (gy0 + dy);
         const cell = grid.get(key);
         if (!cell) continue;
         found = true;
-        for (let i = 0; i < cell.length; i++) {
-          const pi = cell[i];
-          const ppx = pts[pi][0];
-          const ppy = pts[pi][1];
-          const ddx = ppx - x;
-          const ddy = ppy - y;
+        for (let k = 0; k < cell.length; k++) {
+          const pi = cell[k];
+          const ddx = pts[pi][0] - x;
+          const ddy = pts[pi][1] - y;
           const d = ddx * ddx + ddy * ddy;
           if (d < bestDist) {
             bestDist = d;
@@ -84,49 +87,111 @@ function nearestInGrid(pts, grid, cellSize, x, y) {
       }
     }
     if (ring > 0 && found) {
-      const maxDistInRing = ring * cellSize + cellSize;
-      if (maxDistInRing * maxDistInRing <= bestDist) break;
+      const maxDist = ring * cellSize + cellSize;
+      if (maxDist * maxDist <= bestDist) break;
     }
   }
   return bestIdx;
 }
 
-const FEATURE_GLYPHS = {
-  city: '@',
-  town: '+',
-  ruins: 'R',
-  minorRuins: 'r',
-  resources: '*',
-  trouble: '!',
-  outpostSites: 'O',
-  landmarkSites: 'L',
-  hazards: 'H',
-  obstacles: 'X',
-  areas: 'A',
-};
+function createDisplay(cols, rows) {
+  if (rotDisplay) {
+    const oldEl = rotDisplay.getContainer();
+    if (oldEl && oldEl.parentNode) oldEl.parentNode.removeChild(oldEl);
+    rotDisplay = null;
+  }
+
+  const fontSize = Math.max(8, Math.min(16, Math.floor(700 / Math.max(cols, rows))));
+  rotDisplay = new ROT.Display({
+    width: cols,
+    height: rows,
+    fontSize: fontSize,
+    fontFamily: "monospace",
+    forceCellSize: true,
+    cellWidth: fontSize + 2,
+    cellHeight: fontSize + 4,
+    bg: "#000",
+  });
+
+  rotContainer.innerHTML = "";
+  rotContainer.appendChild(rotDisplay.getContainer());
+  displayCols = cols;
+  displayRows = rows;
+}
+
+function buildLegend() {
+  if (!legendEl) {
+    legendEl = document.createElement("div");
+    legendEl.id = "ascii-legend";
+    legendEl.style.position = "absolute";
+    legendEl.style.bottom = "10px";
+    legendEl.style.left = "50%";
+    legendEl.style.transform = "translateX(-50%)";
+    legendEl.style.zIndex = "10";
+    legendEl.style.background = "rgba(0,0,0,0.7)";
+    legendEl.style.padding = "8px 16px";
+    legendEl.style.borderRadius = "6px";
+    legendEl.style.fontFamily = "monospace";
+    legendEl.style.fontSize = "12px";
+    rotContainer.appendChild(legendEl);
+  }
+
+  let html = "";
+  for (let i = 0; i < BIOME_GLYPHS_BY_INDEX.length; i++) {
+    const info = BIOME_GLYPHS_BY_INDEX[i];
+    html += `<span style="color:${info.color};margin:0 4px">${info.glyph} ${BIOME_NAMES[i]}</span>`;
+  }
+  for (const [key, info] of Object.entries(FEATURE_GLYPHS)) {
+    html += `<span style="color:${info.color};margin:0 4px">${info.ch} ${key}</span>`;
+  }
+  legendEl.innerHTML = html;
+}
 
 export function showAsciiMap(display, state, tileSize) {
-  ensureContainer();
+  const container = ensureContainer();
+  container.style.display = "block";
+
   const { pts, biome, extent } = display;
   const hw = extent.width / 2;
   const hh = extent.height / 2;
 
   const cols = Math.ceil(extent.width / tileSize);
   const rows = Math.ceil(extent.height / tileSize);
-
   const tileHalfW = tileSize / 2;
   const tileHalfH = tileSize / 2;
-
   const cellSize = Math.max(tileSize, 10);
   const grid = buildSpatialGrid(pts, cellSize);
 
-  const glyphGrid = [];
-  for (let r = 0; r < rows; r++) {
-    const row = [];
-    for (let c = 0; c < cols; c++) {
-      row.push(' ');
+  if (!rotDisplay || displayCols !== cols || displayRows !== rows) {
+    createDisplay(cols, rows);
+  }
+  rotDisplay.clear();
+
+  const featureMap = Array.from({ length: rows }, () => new Array(cols).fill(null));
+
+  const featureSets = [
+    [state.cities || [], FEATURE_GLYPHS.city],
+    [state.towns || [], FEATURE_GLYPHS.town],
+    [state.ruins || [], FEATURE_GLYPHS.ruins],
+    [state.minorRuins || [], FEATURE_GLYPHS.minorRuins],
+    [state.resources || [], FEATURE_GLYPHS.resources],
+    [state.trouble || [], FEATURE_GLYPHS.trouble],
+    [state.outpostSites || [], FEATURE_GLYPHS.outpostSites],
+    [state.landmarkSites || [], FEATURE_GLYPHS.landmarkSites],
+    [state.factionSites || [], FEATURE_GLYPHS.factionSites],
+    [state.hazards || [], FEATURE_GLYPHS.hazards],
+    [state.obstacles || [], FEATURE_GLYPHS.obstacles],
+    [state.areas || [], FEATURE_GLYPHS.areas],
+  ];
+
+  for (const [items, glyphInfo] of featureSets) {
+    for (const item of items) {
+      const fc = Math.floor((item.x + hw) / tileSize);
+      const fr = Math.floor((item.z + hh) / tileSize);
+      if (fc >= 0 && fc < cols && fr >= 0 && fr < rows) {
+        featureMap[fr][fc] = glyphInfo;
+      }
     }
-    glyphGrid.push(row);
   }
 
   for (let r = 0; r < rows; r++) {
@@ -136,44 +201,23 @@ export function showAsciiMap(display, state, tileSize) {
       const bestIdx = nearestInGrid(pts, grid, cellSize, tileCenterX, tileCenterY);
       const b = biome ? biome[bestIdx] : 0;
       const info = BIOME_GLYPHS_BY_INDEX[b] || BIOME_GLYPHS_BY_INDEX[0];
-      glyphGrid[r][c] = info.glyph;
-    }
-  }
+      const feat = featureMap[r][c];
 
-  const featureSets = [
-    { items: state.cities || [], glyph: FEATURE_GLYPHS.city },
-    { items: state.towns || [], glyph: FEATURE_GLYPHS.town },
-    { items: state.ruins || [], glyph: FEATURE_GLYPHS.ruins },
-    { items: state.minorRuins || [], glyph: FEATURE_GLYPHS.minorRuins },
-    { items: state.resources || [], glyph: FEATURE_GLYPHS.resources },
-    { items: state.trouble || [], glyph: FEATURE_GLYPHS.trouble },
-  ];
-
-  for (const fs of featureSets) {
-    for (const item of fs.items) {
-      const fx = item.x;
-      const fy = item.z;
-      const fc = Math.floor((fx + hw) / tileSize);
-      const fr = Math.floor((fy + hh) / tileSize);
-      if (fc >= 0 && fc < cols && fr >= 0 && fr < rows) {
-        glyphGrid[fr][fc] = fs.glyph;
+      if (feat) {
+        rotDisplay.draw(c, r, feat.ch, feat.color, info.color);
+      } else {
+        rotDisplay.draw(c, r, info.glyph, "#fff", info.color);
       }
     }
   }
 
-  let html = '';
-  for (let r = 0; r < rows; r++) {
-    html += glyphGrid[r].join('') + '\n';
-  }
-
-  asciiPre.textContent = html;
-  asciiContainer.style.display = 'block';
+  buildLegend();
 }
 
 export function hideAsciiMap() {
-  if (asciiContainer) {
-    asciiContainer.style.display = 'none';
+  if (rotContainer) {
+    rotContainer.style.display = "none";
   }
-  const fpsEl = document.getElementById('fps');
-  if (fpsEl) fpsEl.style.display = '';
+  const fpsEl = document.getElementById("fps");
+  if (fpsEl) fpsEl.style.display = "";
 }

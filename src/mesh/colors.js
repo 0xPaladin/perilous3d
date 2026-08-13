@@ -31,7 +31,7 @@ export const TERRAIN_COLORS = {
   [TERRAIN.RIVER]:    [0.35, 0.57, 0.74],   // river blue
 };
 
-const BIOME_COLORS = [
+export const BIOME_COLORS = [
   [0.29, 0.54, 0.71],  // 0  Marine
   [0.83, 0.72, 0.48],  // 1  Hot desert
   [0.66, 0.60, 0.55],  // 2  Cold desert
