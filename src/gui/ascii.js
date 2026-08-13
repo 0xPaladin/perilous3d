@@ -1,4 +1,4 @@
-import { BIOME_GLYPHS_BY_INDEX, BIOME_NAMES } from "../terrain/config.js";
+import { BIOME_GLYPHS, BIOME_GLYPHS_BY_INDEX, BIOME_NAMES } from "../terrain/config.js";
 
 let rotDisplay = null;
 let rotContainer = null;
@@ -121,6 +121,8 @@ function buildLegend() {
     const info = BIOME_GLYPHS_BY_INDEX[i];
     html += `<span style="color:${info.color}">${info.glyph} ${BIOME_NAMES[i]}</span>`;
   }
+  html += `<span style="color:${BIOME_GLYPHS.Hill.color}">${BIOME_GLYPHS.Hill.glyph} Hill</span>`;
+  html += `<span style="color:${BIOME_GLYPHS.Mountain.color}">${BIOME_GLYPHS.Mountain.glyph} Mountain</span>`;
   for (const [key, info] of Object.entries(FEATURE_GLYPHS)) {
     html += `<span style="color:${info.color}">${info.ch} ${key}</span>`;
   }
@@ -131,7 +133,7 @@ export function showAsciiMap(display, state, tileSize) {
   const container = ensureContainer();
   container.style.display = "block";
 
-  const { pts, biome, extent } = display;
+  const { pts, biome, heights, extent } = display;
   const hw = extent.width / 2;
   const hh = extent.height / 2;
 
@@ -179,14 +181,28 @@ export function showAsciiMap(display, state, tileSize) {
     for (let c = 0; c < cols; c++) {
       const tileCenterX = -hw + tileHalfW + c * tileSize;
       const bestIdx = nearestInGrid(pts, grid, cellSize, tileCenterX, tileCenterY);
+      const h = heights ? heights[bestIdx] : 0;
       const b = biome ? biome[bestIdx] : 0;
-      const info = BIOME_GLYPHS_BY_INDEX[b] || BIOME_GLYPHS_BY_INDEX[0];
+      const biomeInfo = BIOME_GLYPHS_BY_INDEX[b] || BIOME_GLYPHS_BY_INDEX[0];
+
+      let terrainGlyph, terrainColor;
+      if (h > 0.55) {
+        terrainGlyph = BIOME_GLYPHS.Mountain.glyph;
+        terrainColor = BIOME_GLYPHS.Mountain.color;
+      } else if (h > 0.3) {
+        terrainGlyph = BIOME_GLYPHS.Hill.glyph;
+        terrainColor = BIOME_GLYPHS.Hill.color;
+      } else {
+        terrainGlyph = biomeInfo.glyph;
+        terrainColor = biomeInfo.color;
+      }
+
       const feat = featureMap[r][c];
 
       if (feat) {
-        rotDisplay.draw(c, r, feat.ch, feat.color, info.color);
+        rotDisplay.draw(c, r, feat.ch, feat.color, terrainColor);
       } else {
-        rotDisplay.draw(c, r, info.glyph, "#fff", info.color);
+        rotDisplay.draw(c, r, terrainGlyph, "#fff", terrainColor);
       }
     }
   }
