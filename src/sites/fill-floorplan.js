@@ -46,7 +46,12 @@ export function generateFillFloorPlan(seed, shape, options = {}) {
     // ---- 3. Randomized spanning tree (guarantees full connectivity) --------
     const doors = connectRooms(rand, rooms.length, edges, extraConnectionChance);
 
-    return { rooms, doors };
+    // ---- 4. Stairs
+    const stairs = shuffle(rand, rooms).slice(0, 2).map(([x1, y1, x2, y2]) => {
+        return [randInt(rand, x1 + 1, x2 - 1), randInt(rand, y1 + 1, y2 - 1)]
+    });
+
+    return { rooms, doors, stairs };
 }
 
 // ---- rectangle fill: exact BSP tiling, no padding --------------------------
@@ -205,6 +210,18 @@ function doorFromEdge(rand, edge) {
 
 function randInt(rand, min, max) {
     return Math.floor(rand() * (max - min + 1)) + min;
+}
+
+function shuffle(rand, array) {
+    // Loop from the last element down to the second
+    for (let i = array.length - 1; i > 0; i--) {
+        // Pick a random index from 0 to i
+        const j = Math.floor(rand() * (i + 1));
+
+        // Swap elements using destructuring assignment
+        [array[i], array[j]] = [array[j], array[i]];
+    }
+    return array;
 }
 
 // Examples:

@@ -50,13 +50,23 @@ function rectRoomsToGrid(rooms, doors, stairs, width, height, isFloorplan = fals
     // Initialize grid as all walls
     const grid = Array.from({ length: height }, () => new Array(width).fill(isFloorplan ? CELL.EMPTY : CELL.WALL));
 
-    // Fill rooms with floor
-    for (const coords of rooms) {
+    // Fill rooms with floor and stairs 
+    rooms.forEach((coords, i) => {
         const room = new Room(...coords);
         room.create((x, y, val) => {
             val === 0 ? grid[y][x] = CELL.FLOOR : null;
         })
-    }
+
+        //stairs
+        if (i < 2 && isFloorplan) {
+            //get point from function
+            const [sx, sy] = stairs[i].map((f, j) => {
+                return f === 'getCenter' ? room[f]()[i] : room[f]();
+            });
+            //now make stairs
+            grid[sy][sx] = CELL.STAIRS;
+        }
+    })
 
     // Place doors
     for (const [x, y] of doors) {
@@ -65,11 +75,8 @@ function rectRoomsToGrid(rooms, doors, stairs, width, height, isFloorplan = fals
         }
     }
 
-    // Place stairs (overrides doors if overlapping)
-    for (const [x, y] of stairs) {
-        if (x >= 0 && x < width && y >= 0 && y < height) {
-            grid[y][x] = CELL.STAIRS;
-        }
+    if (!isFloorplan) {
+        stairs.forEach(([x, y]) => grid[y][x] = CELL.STAIRS);
     }
 
     return grid;
@@ -209,10 +216,7 @@ export function generateSite(opts = {}) {
 
         case 'warehouse': {
             // Fill floor plan — completely fills the shape with rooms
-            const layout = generateFillFloorPlan(seed, { w: w - 1, h: h - 1 });
-            rooms = layout.rooms;
-            doors = layout.doors;
-            stairs = [];
+            const { rooms, doors, stairs } = generateFillFloorPlan(seed, { w: w - 1, h: h - 1 });
             walls = [];
             grid = rectRoomsToGrid(rooms, doors, stairs, width, height);
             break;

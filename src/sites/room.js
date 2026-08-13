@@ -33,4 +33,12 @@ export class Room {
             }
         }
     }
+
+    getCenter() {
+        return [Math.round((this._x1 + this._x2) / 2), Math.round((this._y1 + this._y2) / 2)];
+    }
+    getLeft() { return this._x1; }
+    getRight() { return this._x2; }
+    getTop() { return this._y1; }
+    getBottom() { return this._y2; }
 }

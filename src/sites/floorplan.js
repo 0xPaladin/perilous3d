@@ -72,11 +72,34 @@ export function floorPlan(seed, mapWidth, mapHeight, options = {}) {
     }
 
     const list = shuffle(['TL', 'TR', 'BR', 'BL']).slice(0, randInt(1, 3));
-    const footprint = [randRect.C(), ...list.map(rect => randRect[rect]())];
+    const stairRooms = list.length > 1 ? list.slice(0, 2) : [list[0], 'C']
+    const footprint = [...list.map((rect, i) => randRect[rect]()), randRect.C()];
+
+    //random stairs
+    const stairFunctions = {
+        'TL': ['getLeft', 'getTop'],
+        'TR': ['getRight', 'getTop'],
+        'BR': ['getRight', 'getBottom'],
+        'BL': ['getLeft', 'getBottom'],
+        'C': [],
+    };
+    //randomly pick along a wall
+    const stairs = stairRooms.map(id => {
+        if (id === 'C') {
+            const rl = pick(['getRight', 'getLeft']);
+            const tb = stairRooms[0].includes('T') ? 'getBottom' : 'getTop';
+            return [rl, tb]
+        }
+        const [fx, fy] = stairFunctions[id];
+        const sx = pick([fx, 'getCenter']);
+        //don't allow two getCenters
+        return [sx, pick([fy, sx === 'getCenter' ? fy : 'getCenter'])];
+    });
 
     return {
         rooms: footprint,
         doors: [],
-        walls: []
+        walls: [],
+        stairs,
     };
 }
