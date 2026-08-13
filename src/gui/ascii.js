@@ -26,16 +26,6 @@ function ensureContainer() {
 
   rotContainer = document.createElement("div");
   rotContainer.id = "ascii-map";
-  rotContainer.style.position = "absolute";
-  rotContainer.style.top = "0";
-  rotContainer.style.left = "0";
-  rotContainer.style.width = "100%";
-  rotContainer.style.height = "100%";
-  rotContainer.style.zIndex = "5";
-  rotContainer.style.overflow = "auto";
-  rotContainer.style.background = "#000";
-  rotContainer.style.fontFamily = "monospace";
-  rotContainer.style.display = "none";
   document.body.appendChild(rotContainer);
 
   const fpsEl = document.getElementById("fps");
@@ -123,26 +113,16 @@ function buildLegend() {
   if (!legendEl) {
     legendEl = document.createElement("div");
     legendEl.id = "ascii-legend";
-    legendEl.style.position = "absolute";
-    legendEl.style.bottom = "10px";
-    legendEl.style.left = "50%";
-    legendEl.style.transform = "translateX(-50%)";
-    legendEl.style.zIndex = "10";
-    legendEl.style.background = "rgba(0,0,0,0.7)";
-    legendEl.style.padding = "8px 16px";
-    legendEl.style.borderRadius = "6px";
-    legendEl.style.fontFamily = "monospace";
-    legendEl.style.fontSize = "12px";
     rotContainer.appendChild(legendEl);
   }
 
   let html = "";
   for (let i = 0; i < BIOME_GLYPHS_BY_INDEX.length; i++) {
     const info = BIOME_GLYPHS_BY_INDEX[i];
-    html += `<span style="color:${info.color};margin:0 4px">${info.glyph} ${BIOME_NAMES[i]}</span>`;
+    html += `<span style="color:${info.color}">${info.glyph} ${BIOME_NAMES[i]}</span>`;
   }
   for (const [key, info] of Object.entries(FEATURE_GLYPHS)) {
-    html += `<span style="color:${info.color};margin:0 4px">${info.ch} ${key}</span>`;
+    html += `<span style="color:${info.color}">${info.ch} ${key}</span>`;
   }
   legendEl.innerHTML = html;
 }
