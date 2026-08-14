@@ -47,10 +47,11 @@
 export function createDistrict(map, options = {}) {
     const {
         waterChar = '~',
+        roadChars = ['=', '-'],
         size = 0.85,
-        density = 0.75,          // 0 = sprawling, 1 = packed
-        elevated = true,
+        density = 0.75,          // 0 = sprawling → 1 = ultra-packed
         preferWater = true,
+        preferRoad = true,
         seed = null
     } = options;
 
@@ -77,278 +78,265 @@ export function createDistrict(map, options = {}) {
 
     const inBounds = (x, y) => x >= 0 && x < W && y >= 0 && y < H;
     const isWater = (x, y) => inBounds(x, y) && grid[y][x] === waterChar;
+    const isRoad = (x, y) => inBounds(x, y) && roadChars.includes(grid[y][x]);
+    const isBlocked = (x, y) => isWater(x, y) || isRoad(x, y);
 
     function set(x, y, ch, force = false) {
         if (!inBounds(x, y)) return false;
-        if (!force && grid[y][x] === waterChar) return false;
+        if (!force && isBlocked(x, y)) return false;
         grid[y][x] = ch;
         return true;
     }
 
-    // ---------- district bounds ----------
-    const margin = Math.max(2, Math.floor(Math.min(W, H) * 0.04));
-    const dW = Math.floor(W * size);
-    const dH = Math.floor(H * size);
-    const ox = Math.floor((W - dW) / 2);
-    const oy = Math.floor((H - dH) / 2);
-
-    // ---------- density helpers ----------
-    const dens = Array.from({ length: H }, () => new Float32Array(W));
-
-    function addBlob(cx, cy, strength, radius, power = 1.55) {
-        const r2 = radius * radius;
-        for (let y = Math.max(0, cy - radius - 1); y < Math.min(H, cy + radius + 2); y++) {
-            for (let x = Math.max(0, cx - radius - 1); x < Math.min(W, cx + radius + 2); x++) {
-                if (isWater(x, y)) continue;
-                const dist = Math.hypot(x - cx, y - cy);
-                if (dist > radius) continue;
-                const t = Math.pow(1 - dist / radius, power);
-                dens[y][x] += strength * t;
-            }
+    // ---------- collect existing infrastructure ----------
+    const roadTiles = [];
+    const waterTiles = [];
+    for (let y = 0; y < H; y++) {
+        for (let x = 0; x < W; x++) {
+            if (isRoad(x, y)) roadTiles.push({ x, y });
+            if (isWater(x, y)) waterTiles.push({ x, y });
         }
     }
 
-    // ---------- 1. Key anchors (multi-centre) ----------
+    // ---------- organic district shape ----------
+    const cx = Math.floor(W / 2) + randInt(-Math.floor(W * 0.08), Math.floor(W * 0.08));
+    const cy = Math.floor(H / 2) + randInt(-Math.floor(H * 0.08), Math.floor(H * 0.08));
+    const baseRadius = Math.floor(Math.min(W, H) * size * 0.48);
+
+    function edgeNoise(x, y) {
+        const n1 = Math.sin(x * 0.13 + y * 0.17 + rngState) * 4.5;
+        const n2 = Math.sin(x * 0.07 - y * 0.11 + 12.3) * 3.2;
+        return n1 + n2;
+    }
+
+    function insideDistrict(x, y) {
+        const dist = Math.hypot(x - cx, y - cy);
+        const noisyRadius = baseRadius + edgeNoise(x, y);
+        return dist < noisyRadius;
+    }
+
+    // ---------- scoring helper ----------
+    function scoreLocation(x, y) {
+        let score = rand() * 1.5;
+
+        if (preferRoad && roadTiles.length) {
+            let minD = Infinity;
+            const step = Math.max(1, Math.floor(roadTiles.length / 70));
+            for (let i = 0; i < roadTiles.length; i += step) {
+                const d = Math.hypot(roadTiles[i].x - x, roadTiles[i].y - y);
+                if (d < minD) minD = d;
+            }
+            if (minD < 13) score += (13 - minD) * 2.2;
+        }
+
+        if (preferWater && waterTiles.length) {
+            let minD = Infinity;
+            const step = Math.max(1, Math.floor(waterTiles.length / 50));
+            for (let i = 0; i < waterTiles.length; i += step) {
+                const d = Math.hypot(waterTiles[i].x - x, waterTiles[i].y - y);
+                if (d < minD) minD = d;
+            }
+            if (minD < 10) score += (10 - minD) * 1.7;
+        }
+
+        // mild preference for being deeper inside the district
+        const distC = Math.hypot(x - cx, y - cy);
+        score += Math.max(0, 5 - distC * 0.09);
+
+        return score;
+    }
+
+    // ---------- anchors (biased toward roads / water) ----------
     const anchors = [];
 
-    function placeAnchor(role, preferWF = false) {
-        for (let attempt = 0; attempt < 50; attempt++) {
-            let x = ox + randInt(margin, dW - margin);
-            let y = oy + randInt(margin, dH - margin);
+    function placeAnchor(role, minSep = 7) {
+        const candidates = [];
 
-            // bias toward waterfront for docks / industrial
-            if (preferWF && preferWater) {
-                // simple bias: push toward nearest map edge that might have water
-                if (chance(0.5)) x = randInt(2, Math.floor(W * 0.25));
-                else if (chance(0.5)) x = randInt(Math.floor(W * 0.75), W - 3);
+        for (let attempt = 0; attempt < 65; attempt++) {
+            let x = cx + randInt(-baseRadius + 5, baseRadius - 5);
+            let y = cy + randInt(-baseRadius + 5, baseRadius - 5);
+
+            // strong bias toward existing roads
+            if (preferRoad && roadTiles.length && chance(0.6)) {
+                const r = pick(roadTiles);
+                x = r.x + randInt(-4, 4);
+                y = r.y + randInt(-4, 4);
+            } else if (preferWater && waterTiles.length && chance(0.35)) {
+                const w = pick(waterTiles);
+                x = w.x + randInt(-3, 3);
+                y = w.y + randInt(-3, 3);
             }
 
-            if (isWater(x, y)) continue;
+            if (!inBounds(x, y) || isBlocked(x, y) || !insideDistrict(x, y)) continue;
 
             let tooClose = false;
             for (const a of anchors) {
-                if (Math.hypot(a.x - x, a.y - y) < 7) { tooClose = true; break; }
+                if (Math.hypot(a.x - x, a.y - y) < minSep) {
+                    tooClose = true;
+                    break;
+                }
             }
             if (tooClose) continue;
 
-            anchors.push({ x, y, role });
-            return { x, y };
+            candidates.push({ x, y, score: scoreLocation(x, y) });
         }
-        // fallback
-        const x = ox + Math.floor(dW / 2) + randInt(-5, 5);
-        const y = oy + Math.floor(dH / 2) + randInt(-5, 5);
-        anchors.push({ x, y, role });
-        return { x, y };
+
+        if (candidates.length === 0) {
+            anchors.push({ x: cx, y: cy, role });
+            return;
+        }
+
+        candidates.sort((a, b) => b.score - a.score);
+        const best = candidates[randInt(0, Math.min(4, candidates.length - 1))];
+        anchors.push({ x: best.x, y: best.y, role });
     }
 
-    // Always present
-    const core = placeAnchor('core');
-    const corp = placeAnchor('corp');
-    const transit = placeAnchor('transit');
-    const commercial = placeAnchor('commercial');
+    placeAnchor('core', 8);
+    placeAnchor('corp', 7);
+    placeAnchor('transit', 7);
+    placeAnchor('commercial', 7);
+    if (density > 0.4) placeAnchor('arcology', 7);
+    if (density > 0.25) placeAnchor('entertainment', 6);
+    placeAnchor('residential', 6);
+    placeAnchor('residential', 6);
+    if (density < 0.65) placeAnchor('residential', 6);
+    placeAnchor('industrial', 7);   // will naturally prefer waterfront when present
 
-    // Conditional / density-dependent
-    if (density > 0.45) placeAnchor('arcology');
-    if (density > 0.3) placeAnchor('entertainment');
-    placeAnchor('residential');
-    placeAnchor('residential');
-    if (density < 0.7) placeAnchor('residential'); // extra in sprawling
+    // ---------- density field ----------
+    const dens = Array.from({ length: H }, () => new Float32Array(W));
 
-    if (preferWater) placeAnchor('industrial', true);
-    else placeAnchor('industrial');
+    function addBlob(bx, by, strength, radius, power = 1.55) {
+        const r = Math.ceil(radius);
+        const y0 = Math.max(0, Math.floor(by - r - 1));
+        const y1 = Math.min(H, Math.ceil(by + r + 2));
+        const x0 = Math.max(0, Math.floor(bx - r - 1));
+        const x1 = Math.min(W, Math.ceil(bx + r + 2));
 
-    // ---------- 2. Road / highway network ----------
-    // More grid-like when density is high, more organic when low
-    const gridness = 0.25 + density * 0.6;
-
-    function carveAvenue(x1, y1, x2, y2, major = true) {
-        const dist = Math.hypot(x2 - x1, y2 - y1);
-        const steps = Math.ceil(dist * 1.35);
-        for (let i = 0; i <= steps; i++) {
-            const t = i / steps;
-            let px = x1 + (x2 - x1) * t;
-            let py = y1 + (y2 - y1) * t;
-
-            // jitter (less when gridness is high)
-            const jitter = (1 - gridness) * (rand() - 0.5) * 2.2;
-            const dx = x2 - x1, dy = y2 - y1;
-            const len = Math.hypot(dx, dy) || 1;
-            px += -dy / len * jitter;
-            py += dx / len * jitter;
-
-            px = Math.round(px);
-            py = Math.round(py);
-            if (!inBounds(px, py) || isWater(px, py)) continue;
-
-            const ch = major ? '=' : '-';
-            set(px, py, ch);
-
-            // widen major avenues
-            if (major) {
-                if (chance(0.55)) set(px + 1, py, ch);
-                if (chance(0.55)) set(px - 1, py, ch);
-                if (chance(0.35)) set(px, py + 1, ch);
-                if (chance(0.35)) set(px, py - 1, ch);
+        for (let y = y0; y < y1; y++) {
+            for (let x = x0; x < x1; x++) {
+                if (isBlocked(x, y) || !insideDistrict(x, y)) continue;
+                const dist = Math.hypot(x - bx, y - by);
+                if (dist > radius) continue;
+                dens[y][x] += strength * Math.pow(1 - dist / radius, power);
             }
         }
     }
 
-    // Connect major anchors
-    const majorAnchors = anchors.filter(a =>
-        ['core', 'corp', 'transit', 'commercial', 'arcology'].includes(a.role)
-    );
-
-    for (let i = 0; i < majorAnchors.length; i++) {
-        for (let j = i + 1; j < majorAnchors.length; j++) {
-            if (chance(0.8)) {
-                carveAvenue(majorAnchors[i].x, majorAnchors[i].y,
-                    majorAnchors[j].x, majorAnchors[j].y, true);
+    // Base density inside the organic shape
+    const base = 0.24 + density * 0.2;
+    for (let y = 0; y < H; y++) {
+        for (let x = 0; x < W; x++) {
+            if (insideDistrict(x, y) && !isBlocked(x, y)) {
+                dens[y][x] += base;
             }
         }
     }
 
-    // Secondary connections
-    for (const a of anchors) {
-        if (['residential', 'industrial', 'entertainment'].includes(a.role)) {
-            const target = pick(majorAnchors);
-            carveAvenue(a.x, a.y, target.x, target.y, false);
-        }
-    }
-
-    // Extra organic or grid streets
-    const extraCount = Math.floor(8 + density * 14);
-    for (let i = 0; i < extraCount; i++) {
-        const a = pick(anchors);
-        const b = pick(anchors);
-        if (a !== b) carveAvenue(a.x, a.y, b.x, b.y, chance(0.3));
-    }
-
-    // Elevated highways (cyberpunk flavour)
-    if (elevated && density > 0.35) {
-        // a couple of long elevated runs
-        for (let k = 0; k < 2 + Math.floor(density * 2); k++) {
-            const horizontal = chance(0.5);
-            if (horizontal) {
-                const y = oy + randInt(Math.floor(dH * 0.2), Math.floor(dH * 0.8));
-                for (let x = ox + 2; x < ox + dW - 2; x++) {
-                    if (!isWater(x, y) && chance(0.92)) set(x, y, '≡');
-                }
-            } else {
-                const x = ox + randInt(Math.floor(dW * 0.2), Math.floor(dW * 0.8));
-                for (let y = oy + 2; y < oy + dH - 2; y++) {
-                    if (!isWater(x, y) && chance(0.92)) set(x, y, '≡');
-                }
-            }
-        }
-    }
-
-    // ---------- 3. Density field ----------
+    // Density from anchors
     for (const a of anchors) {
         let strength, radius, power;
         switch (a.role) {
             case 'core':
             case 'arcology':
-                strength = 1.6 + density * 0.5;
-                radius = 9 + density * 5;
+                strength = 1.5 + density * 0.4;
+                radius = 8 + density * 4;
                 power = 1.35;
                 break;
             case 'corp':
-                strength = 1.4 + density * 0.4;
-                radius = 8 + density * 4;
+                strength = 1.3 + density * 0.3;
+                radius = 7 + density * 3.2;
                 power = 1.4;
                 break;
             case 'commercial':
             case 'entertainment':
-                strength = 1.25 + density * 0.35;
-                radius = 7 + density * 3.5;
+                strength = 1.15 + density * 0.28;
+                radius = 6.5 + density * 2.8;
                 power = 1.45;
                 break;
             case 'transit':
-                strength = 1.1;
-                radius = 6 + density * 2;
+                strength = 1.0;
+                radius = 5.5 + density * 1.8;
                 power = 1.5;
                 break;
             case 'residential':
-                strength = 0.9 + density * 0.3;
-                radius = 9 + (1 - density) * 4; // larger spread when sprawling
+                strength = 0.85 + density * 0.22;
+                radius = 8 + (1 - density) * 4.5;
                 power = 1.6;
                 break;
             case 'industrial':
-                strength = 0.95;
-                radius = 7;
+                strength = 0.9;
+                radius = 6.5;
                 power = 1.55;
                 break;
             default:
-                strength = 0.8;
-                radius = 7;
+                strength = 0.75;
+                radius = 6;
                 power = 1.6;
         }
         addBlob(a.x, a.y, strength, radius, power);
     }
 
-    // Strong boost along avenues
-    for (let y = 0; y < H; y++) {
-        for (let x = 0; x < W; x++) {
-            if (grid[y][x] === '=' || grid[y][x] === '≡') {
-                for (let dy = -2; dy <= 2; dy++) {
-                    for (let dx = -2; dx <= 2; dx++) {
-                        const nx = x + dx, ny = y + dy;
-                        if (inBounds(nx, ny) && !isWater(nx, ny)) {
-                            dens[ny][nx] += 0.45 * (1 - Math.hypot(dx, dy) / 3.2);
-                        }
-                    }
-                }
-            }
-        }
+    // Strong extra density along existing roads
+    for (const r of roadTiles) {
+        addBlob(r.x, r.y, 0.7, 4.0, 1.55);
     }
 
-    // ---------- 4. Paint the district ----------
+    // Waterfront density
+    for (const w of waterTiles) {
+        addBlob(w.x, w.y, 0.55, 3.5, 1.65);
+    }
+
+    // ---------- paint buildings ----------
     for (let y = 0; y < H; y++) {
         for (let x = 0; x < W; x++) {
-            if (isWater(x, y)) continue;
-            if (grid[y][x] === '=' || grid[y][x] === '-' || grid[y][x] === '≡') continue;
+            if (!insideDistrict(x, y) || isBlocked(x, y)) continue;
 
             const d = dens[y][x];
-            if (d < 0.15) continue; // empty / periphery
+            if (d < 0.18) continue;
 
-            // Ultra dense core
-            if (d > 1.35) {
-                set(x, y, chance(0.18) ? 'A' : '#');          // arcology fabric or dense towers
-            }
-            // High density
-            else if (d > 0.95) {
+            if (d > 1.3) {
+                set(x, y, chance(0.18) ? 'A' : '#');
+            } else if (d > 0.9) {
                 const r = rand();
-                if (r < 0.12) set(x, y, 'C');                 // corporate
-                else if (r < 0.22) set(x, y, 'N');            // neon commercial
+                if (r < 0.1) set(x, y, 'C');
+                else if (r < 0.19) set(x, y, 'N');
                 else set(x, y, '#');
-            }
-            // Medium
-            else if (d > 0.55) {
+            } else if (d > 0.5) {
                 const r = rand();
-                if (r < 0.15) set(x, y, 'N');
-                else if (r < 0.55) set(x, y, 'R');            // residential high-rise
+                if (r < 0.12) set(x, y, 'N');
+                else if (r < 0.48) set(x, y, 'R');
                 else set(x, y, '#');
-            }
-            // Lower / sprawling
-            else if (d > 0.28) {
+            } else if (d > 0.28) {
                 const r = rand();
-                if (r < 0.6) set(x, y, 'r');                  // mid/low residential
-                else if (r < 0.75) set(x, y, 'S');            // lower city / slum
-                else set(x, y, chance(0.3) ? 'I' : 'r');
-            }
-            // Fringe
-            else {
-                if (chance(0.35)) set(x, y, chance(0.4) ? 'S' : 'r');
+                if (r < 0.55) set(x, y, 'r');
+                else if (r < 0.72) set(x, y, 'S');
+                else set(x, y, chance(0.35) ? 'I' : 'r');
+            } else {
+                if (chance(0.4)) set(x, y, chance(0.4) ? 'S' : 'r');
             }
         }
     }
 
-    // ---------- 5. Special landmarks ----------
-    function stamp(role, ch, count = 1, rad = 3) {
-        const list = anchors.filter(a => a.role === role);
-        for (const a of list) {
+    // ---------- final fill (safety net for any remaining empty tiles) ----------
+    for (let y = 0; y < H; y++) {
+        for (let x = 0; x < W; x++) {
+            if (!insideDistrict(x, y) || isBlocked(x, y)) continue;
+            const ch = grid[y][x];
+            if (ch === '.' || ch === 'A' || ch === 'C' || ch === 'N' || ch === 'T' ||
+                ch === 'R' || ch === 'r' || ch === 'S' || ch === 'I' || ch === '#') continue;
+
+            const d = dens[y][x];
+            if (d > 0.7) set(x, y, chance(0.15) ? 'N' : '#');
+            else if (d > 0.4) set(x, y, chance(0.5) ? 'R' : 'r');
+            else set(x, y, chance(0.45) ? 'r' : 'S');
+        }
+    }
+
+    // ---------- landmarks ----------
+    function stamp(role, ch, count = 1, rad = 2) {
+        for (const a of anchors.filter(a => a.role === role)) {
             let placed = 0;
-            for (let i = 0; i < 25 && placed < count; i++) {
+            for (let i = 0; i < 20 && placed < count; i++) {
                 const x = a.x + randInt(-rad, rad);
                 const y = a.y + randInt(-rad, rad);
                 if (set(x, y, ch)) placed++;
@@ -356,41 +344,20 @@ export function createDistrict(map, options = {}) {
         }
     }
 
-    stamp('core', 'A', 2, 2);          // mega arcologies
-    stamp('corp', 'C', 3, 3);
-    stamp('transit', '⛏', 1, 2);
-    stamp('commercial', 'N', 4, 3);
-    stamp('entertainment', 'N', 3, 3);
-    stamp('industrial', 'I', 4, 3);
-    stamp('residential', 'R', 2, 2);
+    stamp('core', 'A', 2, 2);
+    stamp('corp', 'C', 2, 2);
+    stamp('transit', 'T', 1, 1);
+    stamp('commercial', 'N', 3, 2);
+    stamp('entertainment', 'N', 2, 2);
+    stamp('industrial', 'I', 3, 2);
+    stamp('residential', 'R', 1, 2);
 
-    // Small plazas / open spaces at anchors
+    // Small plazas at anchors
     for (const a of anchors) {
         for (let dy = -1; dy <= 1; dy++)
             for (let dx = -1; dx <= 1; dx++)
-                if (chance(0.55)) set(a.x + dx, a.y + dy, '.');
-    }
-
-    // ---------- 6. Final cyberpunk polish ----------
-    // Sprinkle extra neon and lower-city pockets
-    for (let i = 0; i < 30 + density * 40; i++) {
-        const x = ox + randInt(0, dW);
-        const y = oy + randInt(0, dH);
-        if (!inBounds(x, y) || isWater(x, y)) continue;
-        if (grid[y][x] === '#') {
-            if (chance(0.08)) set(x, y, 'N');
-            if (chance(0.04)) set(x, y, 'S');
-        }
-    }
-
-    // Tiny parks / rooftop gardens (rarer in high density)
-    const parkChance = 0.012 * (1.2 - density);
-    for (let y = oy; y < oy + dH; y++) {
-        for (let x = ox; x < ox + dW; x++) {
-            if (grid[y][x] === '#' || grid[y][x] === 'R') {
-                if (chance(parkChance)) set(x, y, '.');
-            }
-        }
+                if (chance(0.5) && insideDistrict(a.x + dx, a.y + dy))
+                    set(a.x + dx, a.y + dy, '.');
     }
 
     return grid;

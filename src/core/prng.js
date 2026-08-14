@@ -36,3 +36,35 @@ export function seedFromString(str) {
   }
   return Math.abs(hash) || 42;
 }
+
+/*
+  Random helper functions
+*/
+
+export function randInt(rng, min, max) {
+  if (max <= min) {
+    return min;
+  }
+
+  return Math.floor(
+    rng() * (max - min + 1)
+  ) + min;
+}
+
+export function pick(rng, array) {
+  return array[
+    Math.floor(rng() * array.length)
+  ];
+}
+
+export function shuffle(rng, array) {
+  // Loop from the last element down to the second
+  for (let i = array.length - 1; i > 0; i--) {
+    // Pick a random index from 0 to i
+    const j = Math.floor(rng() * (i + 1));
+
+    // Swap elements using destructuring assignment
+    [array[i], array[j]] = [array[j], array[i]];
+  }
+  return array;
+}

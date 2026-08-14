@@ -16,17 +16,20 @@
  *   waterfront: Array of { x, y }
  */
 
-import { seedFromString } from '../core/prng.js';
+import { mulberry32, seedFromString, pick, shuffle, randInt } from '../core/prng.js';
+import { createRiver } from './river.js';
+import { createRoad, elevateAndGrid } from './roads.js';
+import { createBay } from './bay.js';
 import { createTown } from './fantasy-town.js';
 import { createCity } from './fantasy-city.js';
 import { createDistrict } from './sci-fi-district.js';
-import { createRiver } from './river.js';
-import { createBay } from './bay.js';
+import { createRuin } from './ruination.js';
 
 // Glyph definitions for ASCII rendering
 // Each entry: { ch, color, bg }
 export const AREA_GLYPHS = {
     // Terrain / base
+    ' ': { ch: ' ', color: '#cccccc', bg: '#333333' },
     '.': { ch: '.', color: '#cccccc', bg: '#333333' },
     '~': { ch: '~', color: '#4a90d9', bg: '#1a3a5c' },
 
@@ -57,6 +60,10 @@ export const AREA_GLYPHS = {
     '⛏': { ch: '⛏', color: '#00ff88', bg: '#1a1a2e' },
 
     // Post-apoc / alien (shared glyphs with distinct colors)
+    '%': { ch: '%', color: '#aaaaaa', bg: '#333333' },
+    '*': { ch: '*', color: '#aaaaaa', bg: '#333333' },
+    'x': { ch: 'x', color: '#aaaaaa', bg: '#333333' },
+    ',': { ch: ',', color: '#04804c', bg: '#333333' },
     '⊘': { ch: '⊘', color: '#ff6600', bg: '#2a1a0a' },
     '☢': { ch: '☢', color: '#ffcc00', bg: '#2a2a0a' },
     '⌬': { ch: '⌬', color: '#aa00ff', bg: '#0a0a1a' },
@@ -83,7 +90,7 @@ const POST_APOC_TEMPLATES = ['post-epoc-ruins', 'alien-ruins'];
  * @param {string} fill - fill character
  * @returns {string[]}
  */
-function createBaseMap(w, h, fill = '.') {
+function createBaseMap(w, h, fill = ' ') {
     return Array.from({ length: h }, () => fill.repeat(w));
 }
 
@@ -226,116 +233,80 @@ export function generateArea(opts = {}) {
     const height = Math.max(20, Math.min(256, h));
 
     // Use the project's PRNG for consistency
-    const seedNum = seedFromString(seed);
+    const prng = mulberry32(seed)
 
     // Start with a base land map
-    let map = createBaseMap(width, height, '.');
+    let map = createBaseMap(width, height, ' ');
+
+    const dirs = ['N', 'S', 'E', 'W', 'NE', 'NW', 'SE', 'SW'];
+    if (addRiver) {
+        const dir = pick(prng, dirs);
+        map = createRiver(map, dir, { seed: seedFromString(seed + '-rivers'), meander: 0.5, width: 1 });
+    }
+    //add roads 
+    const nRoads = randInt(prng, 1, 2)
+    const _dirs = pick(prng, [['N', 'S', 'E', 'W'], ['NE', 'NW', 'SE', 'SW']])
+    map = createRoad(map, shuffle(prng, _dirs).slice(0, nRoads), { seed: seedFromString(seed + '-roads') })
 
     // Add water features (configurable)
     if (addBay) {
         const sides = ['N', 'S', 'E', 'W'];
-        const side = sides[Math.floor((seedNum * 0.123) % sides.length)];
-        map = createBay(map, side, { seed: seedNum, depth: 0.3, width: 0.4 });
-    }
-
-    if (addRiver) {
-        const dirs = ['N', 'S', 'E', 'W', 'NE', 'NW', 'SE', 'SW'];
-        const dir = dirs[Math.floor((seedNum * 0.456) % dirs.length)];
-        map = createRiver(map, dir, { seed: seedNum + 1, meander: 0.5, width: 1 });
+        const side = pick(prng, sides);
+        map = createBay(map, side, { seed: seedFromString(seed + '-bay'), depth: 0.3, width: 0.4 });
     }
 
     // Apply the template-specific generator
     let result;
     let districtName = '';
 
+    const seedNum = seedFromString(seed + '-map');
     switch (template) {
         case 'fantasy-town': {
-            result = createTown(map, { seed: seedNum + 2, size: 0.45, walled: true, preferWater: true });
+            result = createTown(map, { seed: seedNum, size: 0.45, walled: true, preferWater: true });
             districtName = 'Town';
             break;
         }
 
         case 'fantasy-city': {
-            result = createCity(map, { seed: seedNum + 2, size: 0.75, walled: true, preferWater: true });
+            result = createCity(map, { seed: seedNum, size: 0.75, walled: true, preferWater: true });
             districtName = 'City';
             break;
         }
 
         case 'fantasy-city-ruins': {
             // Generate a city, then decay it
-            result = createCity(map, { seed: seedNum + 2, size: 0.75, walled: true, preferWater: true });
-            // Decay: convert some walls to rubble, some buildings to ruins
-            for (let y = 0; y < height; y++) {
-                for (let x = 0; x < width; x++) {
-                    if (result[y][x] === '#') {
-                        // 15% chance to become rubble
-                        if ((seedNum * (x + 1) * (y + 1) * 0.001) % 1 < 0.15) {
-                            result[y][x] = '⊘';
-                        }
-                    }
-                    if (result[y][x] === '█') {
-                        // 20% chance broken wall
-                        if ((seedNum * (x + 1) * (y + 1) * 0.001) % 1 < 0.20) {
-                            result[y][x] = '⊘';
-                        }
-                    }
-                }
-            }
+            result = createCity(map, { seed: seedNum, size: 0.75, walled: true, preferWater: true });
+            result = createRuin(result, { seed: seedFromString(seed + '-ruination'), style: 'fantasy', damage: 0.55, overgrowth: 0.5 });
             districtName = 'Ruined City';
             break;
         }
 
         case 'sci-fi-city-district': {
-            result = createDistrict(map, { seed: seedNum + 2, size: 0.85, density: 0.75, elevated: true, preferWater: true });
+            result = createDistrict(map, { seed: seedNum, size: 0.85, density: 0.75, elevated: true, preferWater: true });
+            result = elevateAndGrid(result, { seed: seedFromString(seed + '-cyberroads') });
             districtName = 'District';
             break;
         }
 
         case 'post-epoc-ruins': {
             // Generate a town, then decay it into ruins
-            result = createTown(map, { seed: seedNum + 2, size: 0.5, walled: false, preferWater: true });
-            // Scatter ruins glyphs
-            for (let y = 0; y < height; y++) {
-                for (let x = 0; x < width; x++) {
-                    if (result[y][x] === '#') {
-                        if ((seedNum * (x + 1) * (y + 1) * 0.001) % 1 < 0.35) {
-                            result[y][x] = '⊘';
-                        }
-                    }
-                    if (result[y][x] === '=') {
-                        if ((seedNum * (x + 1) * (y + 1) * 0.001) % 1 < 0.25) {
-                            result[y][x] = '☢';
-                        }
-                    }
-                }
-            }
-            // Add radiation zones
-            for (let i = 0; i < 3; i++) {
-                const rx = Math.floor((seedNum * (i + 1) * 0.137) % (width - 10)) + 5;
-                const ry = Math.floor((seedNum * (i + 1) * 0.291) % (height - 10)) + 5;
-                for (let dy = -2; dy <= 2; dy++) {
-                    for (let dx = -2; dx <= 2; dx++) {
-                        const nx = rx + dx, ny = ry + dy;
-                        if (nx >= 0 && nx < width && ny >= 0 && ny < height && grid[ny][nx] !== '~') {
-                            grid[ny][nx] = '☢';
-                        }
-                    }
-                }
-            }
+            result = createDistrict(map, { seed: seedNum, size: 0.85, density: 0.75, elevated: true, preferWater: true });
+            result = createRuin(result, { seed: seedFromString(seed + '-ruination'), style: 'postapoc', damage: 0.85, overgrowth: 0.5 });
             districtName = 'Post-Apoc Ruins';
             break;
         }
 
         case 'alien-ruins': {
             // Generate a town-like structure, then alien-ify it
-            result = createTown(map, { seed: seedNum + 2, size: 0.5, walled: false, preferWater: true });
+            result = createDistrict(map, { seed: seedNum, size: 0.85, density: 0.45, elevated: true, preferWater: true });
+            result = createRuin(result, { seed: seedFromString(seed + '-ruination'), style: 'postapoc', damage: 0.85, overgrowth: 0.95 });
             // Replace buildings with alien glyphs
             for (let y = 0; y < height; y++) {
                 for (let x = 0; x < width; x++) {
                     if (result[y][x] === '#') {
-                        const r = (seedNum * (x + 1) * (y + 1) * 0.001) % 1;
-                        if (r < 0.4) result[y][x] = '⌬';
-                        else if (r < 0.7) result[y][x] = '⍓';
+                        const r = randInt(prng, 1, 100);
+                        if (r < 40) result[y][x] = '⌬';
+                        else if (r < 70) result[y][x] = '⍓';
                         else result[y][x] = '⌖';
                     }
                     if (result[y][x] === '†' || result[y][x] === 'T' || result[y][x] === 'H') {

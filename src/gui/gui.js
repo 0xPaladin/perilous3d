@@ -1,7 +1,7 @@
 import GUI from 'lil-gui';
 // lil-gui initialization: folders for Display (Scope/DisplayMode/TileSize), Parameters (terrain or site), Actions, Info
 // Scope toggle switches between terrain and site parameter folders; site mode is ASCII-only
-export function initGUI({ app, generate, generateSite, generateArea, initialScope, initialTemplate, initialTerrain, initialClimate, initialSafety, initialSize, initialNumPoints, initialFeaturesEnabled, initialDisplayMode, initialTileSize, initialSiteTemplate, initialSiteW, initialSiteH, initialSiteFloors, initialAreaTemplate, initialAreaW, initialAreaH }) {
+export function initGUI({ app, generate, generateSite, generateArea, initialScope, initialTemplate, initialTerrain, initialClimate, initialSafety, initialSize, initialNumPoints, initialFeaturesEnabled, initialDisplayMode, initialTileSize, initialSiteTemplate, initialSiteW, initialSiteH, initialSiteFloors, initialAreaTemplate, initialAreaW, initialAreaH, initialAreaRiver, initialAreaBay }) {
   const gui = new GUI({ title: 'Perilous Shores' });
 
   const options = {
@@ -22,6 +22,8 @@ export function initGUI({ app, generate, generateSite, generateArea, initialScop
     areaTemplate: initialAreaTemplate || 'fantasy-town',
     areaW: initialAreaW != null ? initialAreaW : 60,
     areaH: initialAreaH != null ? initialAreaH : 60,
+    areaRiver: initialAreaRiver != null ? initialAreaRiver : true,
+    areaBay: initialAreaBay != null ? initialAreaBay : true,
   };
 
   const displayFolder = gui.addFolder('Display');
@@ -52,6 +54,8 @@ export function initGUI({ app, generate, generateSite, generateArea, initialScop
     .name('Template');
   areaParamsFolder.add(options, 'areaW', 10, 256, 2).name('Width');
   areaParamsFolder.add(options, 'areaH', 10, 256, 2).name('Height');
+  areaParamsFolder.add(options, 'areaRiver').name('River');
+  areaParamsFolder.add(options, 'areaBay').name('Bay');
 
   const siteParamsFolder = gui.addFolder('Parameters');
   siteParamsFolder.add(seedProxy, 'value').name('Seed').listen();
@@ -111,6 +115,8 @@ export function initGUI({ app, generate, generateSite, generateArea, initialScop
         template: options.areaTemplate,
         w: options.areaW,
         h: options.areaH,
+        addRiver: options.areaRiver,
+        addBay: options.areaBay,
       });
     } else {
       generate(options.template, app.seedStr, options.terrain, options.climate, options.safety, options.size, options.points, options.features, options.displayMode, options.tileSize);
@@ -152,6 +158,8 @@ export function initGUI({ app, generate, generateSite, generateArea, initialScop
           template: options.areaTemplate,
           w: options.areaW,
           h: options.areaH,
+          addRiver: options.areaRiver,
+          addBay: options.areaBay,
         });
       } else {
         generate(options.template, seed, options.terrain, options.climate, options.safety, options.size, options.points, options.features, options.displayMode, options.tileSize);
@@ -176,6 +184,8 @@ export function initGUI({ app, generate, generateSite, generateArea, initialScop
           template: options.areaTemplate,
           w: options.areaW,
           h: options.areaH,
+          addRiver: options.areaRiver,
+          addBay: options.areaBay,
         });
       } else {
         generate(options.template, app.seedStr, options.terrain, options.climate, options.safety, options.size, options.points, options.features, options.displayMode, options.tileSize);

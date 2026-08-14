@@ -40,9 +40,11 @@
 export function createCity(map, options = {}) {
     const {
         waterChar = '~',
+        roadChars = ['=', '-'],
         size = 0.75,
         walled = true,
         preferWater = true,
+        preferRoad = true,
         seed = null
     } = options;
 
@@ -58,13 +60,6 @@ export function createCity(map, options = {}) {
     function randInt(a, b) { return a + Math.floor(rand() * (b - a + 1)); }
     function chance(p) { return rand() < p; }
     function pick(arr) { return arr[Math.floor(rand() * arr.length)]; }
-    function shuffle(arr) {
-        for (let i = arr.length - 1; i > 0; i--) {
-            const j = Math.floor(rand() * (i + 1));
-            [arr[i], arr[j]] = [arr[j], arr[i]];
-        }
-        return arr;
-    }
 
     // ---------- normalize ----------
     const H = map.length;
@@ -76,304 +71,223 @@ export function createCity(map, options = {}) {
 
     const inBounds = (x, y) => x >= 0 && x < W && y >= 0 && y < H;
     const isWater = (x, y) => inBounds(x, y) && grid[y][x] === waterChar;
-    const isBlocked = (x, y) => !inBounds(x, y) || isWater(x, y);
+    const isRoad = (x, y) => inBounds(x, y) && roadChars.includes(grid[y][x]);
+    const isBlocked = (x, y) => isWater(x, y) || isRoad(x, y);
 
     function set(x, y, ch, force = false) {
         if (!inBounds(x, y)) return false;
-        if (!force && (grid[y][x] === waterChar || grid[y][x] === '█')) return false;
+        if (!force && isBlocked(x, y)) return false;
         grid[y][x] = ch;
         return true;
     }
 
-    // ---------- 1. Find city bounding area & water ----------
-    const margin = Math.max(3, Math.floor(Math.min(W, H) * 0.06));
+    // ---------- collect existing infrastructure ----------
+    const roadTiles = [];
+    const waterTiles = [];
+    for (let y = 0; y < H; y++) {
+        for (let x = 0; x < W; x++) {
+            if (isRoad(x, y)) roadTiles.push({ x, y });
+            if (isWater(x, y)) waterTiles.push({ x, y });
+        }
+    }
+
+    // ---------- city bounds (soft) ----------
+    const margin = Math.max(3, Math.floor(Math.min(W, H) * 0.05));
     const cityW = Math.floor(W * size);
     const cityH = Math.floor(H * size);
     const originX = Math.floor((W - cityW) / 2);
     const originY = Math.floor((H - cityH) / 2);
 
-    // Collect water-adjacent land tiles (for docks)
-    const waterfront = [];
-    if (preferWater) {
-        for (let y = 1; y < H - 1; y++) {
-            for (let x = 1; x < W - 1; x++) {
-                if (isWater(x, y)) continue;
-                let touches = false;
-                for (let dy = -1; dy <= 1 && !touches; dy++)
-                    for (let dx = -1; dx <= 1; dx++)
-                        if (isWater(x + dx, y + dy)) touches = true;
-                if (touches) waterfront.push({ x, y });
+    // ---------- helper: score a location ----------
+    function scoreLocation(x, y) {
+        let score = rand() * 1.5;
+
+        if (preferRoad && roadTiles.length) {
+            let minD = Infinity;
+            // sample a subset for speed on large maps
+            const step = Math.max(1, Math.floor(roadTiles.length / 80));
+            for (let i = 0; i < roadTiles.length; i += step) {
+                const d = Math.hypot(roadTiles[i].x - x, roadTiles[i].y - y);
+                if (d < minD) minD = d;
             }
+            if (minD < 14) score += (14 - minD) * 2.1;
         }
+
+        if (preferWater && waterTiles.length) {
+            let minD = Infinity;
+            const step = Math.max(1, Math.floor(waterTiles.length / 60));
+            for (let i = 0; i < waterTiles.length; i += step) {
+                const d = Math.hypot(waterTiles[i].x - x, waterTiles[i].y - y);
+                if (d < minD) minD = d;
+            }
+            if (minD < 11) score += (11 - minD) * 1.6;
+        }
+
+        // mild central bias
+        const distC = Math.hypot(x - W / 2, y - H / 2);
+        score += Math.max(0, 6 - distC * 0.08);
+
+        return score;
     }
 
-    // ---------- 2. Place multiple district centres ----------
+    // ---------- place multiple district centres ----------
     const centres = [];
 
-    // Helper to place a centre with minimum separation
-    function addCentre(role, preferred, minSep = 8) {
-        for (let attempt = 0; attempt < 60; attempt++) {
-            let x, y;
-            if (preferred && preferred.length && chance(0.7)) {
-                const p = pick(preferred);
-                x = p.x + randInt(-3, 3);
-                y = p.y + randInt(-3, 3);
-            } else {
-                x = originX + randInt(margin, cityW - margin);
-                y = originY + randInt(margin, cityH - margin);
-            }
-            if (isBlocked(x, y)) continue;
+    function addCentre(role, minSep = 9) {
+        const candidates = [];
 
-            let ok = true;
+        // Prefer locations near roads / water
+        for (let attempt = 0; attempt < 70; attempt++) {
+            let x = originX + randInt(margin, cityW - margin);
+            let y = originY + randInt(margin, cityH - margin);
+
+            // occasional strong bias toward a road tile
+            if (preferRoad && roadTiles.length && chance(0.55)) {
+                const r = pick(roadTiles);
+                x = r.x + randInt(-5, 5);
+                y = r.y + randInt(-5, 5);
+            } else if (preferWater && waterTiles.length && chance(0.35)) {
+                const w = pick(waterTiles);
+                x = w.x + randInt(-4, 4);
+                y = w.y + randInt(-4, 4);
+            }
+
+            if (!inBounds(x, y) || isBlocked(x, y)) continue;
+
+            let tooClose = false;
             for (const c of centres) {
-                const d = Math.hypot(c.x - x, c.y - y);
-                if (d < minSep) { ok = false; break; }
+                if (Math.hypot(c.x - x, c.y - y) < minSep) {
+                    tooClose = true;
+                    break;
+                }
             }
-            if (!ok) continue;
+            if (tooClose) continue;
 
+            candidates.push({ x, y, score: scoreLocation(x, y) });
+        }
+
+        if (candidates.length === 0) {
+            // fallback near geometric centre
+            const x = Math.floor(W / 2) + randInt(-6, 6);
+            const y = Math.floor(H / 2) + randInt(-6, 6);
             centres.push({ x, y, role });
-            return true;
+            return;
         }
-        return false;
+
+        candidates.sort((a, b) => b.score - a.score);
+        const best = candidates[randInt(0, Math.min(5, candidates.length - 1))];
+        centres.push({ x: best.x, y: best.y, role });
     }
 
-    // Core / Old Town (near geometric centre)
-    addCentre('core', [{ x: originX + cityW / 2, y: originY + cityH / 2 }], 10);
+    // Core set of centres
+    addCentre('core', 11);
+    addCentre('market', 9);
+    addCentre('temple', 9);
+    addCentre('noble', 10);
+    addCentre('craft', 8);
+    addCentre('docks', 8);          // will naturally prefer water if present
+    addCentre('resA', 8);
+    addCentre('resB', 8);
+    if (cityW > 55 || cityH > 55) addCentre('resC', 8);
 
-    // Market
-    addCentre('market', null, 9);
+    // ---------- density field ----------
+    const dens = Array.from({ length: H }, () => new Float32Array(W));
 
-    // Temple quarter
-    addCentre('temple', null, 9);
+    function addBlob(bx, by, strength, radius, power = 1.55) {
+        const r = Math.ceil(radius);
+        const y0 = Math.max(0, Math.floor(by - r - 1));
+        const y1 = Math.min(H, Math.ceil(by + r + 2));
+        const x0 = Math.max(0, Math.floor(bx - r - 1));
+        const x1 = Math.min(W, Math.ceil(bx + r + 2));
 
-    // Noble / Castle
-    addCentre('noble', null, 10);
-
-    // Craft / Industrial
-    addCentre('craft', null, 8);
-
-    // Docks (prefer waterfront)
-    if (waterfront.length > 10) {
-        addCentre('docks', waterfront, 8);
-    } else {
-        addCentre('docks', null, 8);
-    }
-
-    // Extra residential centres
-    addCentre('resA', null, 7);
-    addCentre('resB', null, 7);
-    if (cityW > 55 || cityH > 55) {
-        addCentre('resC', null, 7);
-    }
-
-    // ---------- 3. Road network ----------
-    // Major roads between every pair of important centres
-    const important = centres.filter(c =>
-        ['core', 'market', 'temple', 'noble', 'docks'].includes(c.role)
-    );
-
-    function carveRoad(x1, y1, x2, y2, major = true) {
-        let x = x1, y = y1;
-        const steps = Math.ceil(Math.hypot(x2 - x1, y2 - y1)) * 1.4;
-        for (let i = 0; i <= steps; i++) {
-            const t = i / steps;
-            // slight noise so roads are not perfectly straight
-            const jitter = (rand() - 0.5) * 1.8;
-            const px = Math.round(x1 + (x2 - x1) * t + jitter * (y2 - y1) / (Math.hypot(x2 - x1, y2 - y1) || 1));
-            const py = Math.round(y1 + (y2 - y1) * t - jitter * (x2 - x1) / (Math.hypot(x2 - x1, y2 - y1) || 1));
-
-            if (!inBounds(px, py) || isWater(px, py)) continue;
-
-            const ch = major ? '=' : '-';
-            set(px, py, ch);
-
-            // widen major roads a little
-            if (major && chance(0.4)) {
-                set(px + 1, py, ch);
-                set(px - 1, py, ch);
-                set(px, py + 1, ch);
-                set(px, py - 1, ch);
+        for (let y = y0; y < y1; y++) {
+            for (let x = x0; x < x1; x++) {
+                if (isBlocked(x, y)) continue;
+                const dist = Math.hypot(x - bx, y - by);
+                if (dist > radius) continue;
+                dens[y][x] += strength * Math.pow(1 - dist / radius, power);
             }
         }
     }
 
-    // Connect important centres
-    for (let i = 0; i < important.length; i++) {
-        for (let j = i + 1; j < important.length; j++) {
-            if (chance(0.75)) {
-                carveRoad(important[i].x, important[i].y,
-                    important[j].x, important[j].y, true);
-            }
-        }
-    }
-
-    // Connect residential centres to nearest important centre
+    // Density from each centre
     for (const c of centres) {
-        if (c.role.startsWith('res') || c.role === 'craft') {
-            let best = null, bestD = Infinity;
-            for (const i of important) {
-                const d = Math.hypot(i.x - c.x, i.y - c.y);
-                if (d < bestD) { bestD = d; best = i; }
-            }
-            if (best) carveRoad(c.x, c.y, best.x, best.y, false);
-        }
-    }
-
-    // A few extra organic secondary roads
-    for (let k = 0; k < 6; k++) {
-        const a = pick(centres);
-        const b = pick(centres);
-        if (a !== b) carveRoad(a.x, a.y, b.x, b.y, false);
-    }
-
-    // ---------- 4. District growth + density falloff ----------
-    // We paint a density field first, then decide building type from it
-    const density = Array.from({ length: H }, () => new Float32Array(W));
-
-    function addDensityBlob(cx, cy, strength, radius, falloff = 1.6) {
-        const r2 = radius * radius;
-        for (let y = Math.max(0, cy - radius - 2); y < Math.min(H, cy + radius + 3); y++) {
-            for (let x = Math.max(0, cx - radius - 2); x < Math.min(W, cx + radius + 3); x++) {
-                if (isWater(x, y)) continue;
-                const d2 = (x - cx) * (x - cx) + (y - cy) * (y - cy);
-                if (d2 > r2) continue;
-                const t = 1 - Math.pow(Math.sqrt(d2) / radius, falloff);
-                density[y][x] += strength * Math.max(0, t);
-            }
-        }
-    }
-
-    // Different strengths / sizes per role
-    for (const c of centres) {
+        let strength, radius, power;
         switch (c.role) {
             case 'core':
-                addDensityBlob(c.x, c.y, 1.4, 11, 1.4);
-                break;
+                strength = 1.45; radius = 11; power = 1.4; break;
             case 'market':
-                addDensityBlob(c.x, c.y, 1.2, 9, 1.5);
-                break;
+                strength = 1.25; radius = 9; power = 1.5; break;
             case 'temple':
-                addDensityBlob(c.x, c.y, 0.9, 8, 1.6);
-                break;
+                strength = 0.95; radius = 8; power = 1.55; break;
             case 'noble':
-                addDensityBlob(c.x, c.y, 0.7, 9, 1.7); // lower density, larger plots
-                break;
+                strength = 0.75; radius = 9; power = 1.65; break; // lower density
             case 'craft':
-                addDensityBlob(c.x, c.y, 1.1, 8, 1.5);
-                break;
+                strength = 1.15; radius = 8; power = 1.5; break;
             case 'docks':
-                addDensityBlob(c.x, c.y, 1.0, 7, 1.5);
-                break;
+                strength = 1.05; radius = 7; power = 1.5; break;
             default: // residential
-                addDensityBlob(c.x, c.y, 0.95, 10, 1.55);
+                strength = 0.95; radius = 10; power = 1.55;
         }
+        addBlob(c.x, c.y, strength, radius, power);
     }
 
-    // Boost density along major roads
-    for (let y = 0; y < H; y++) {
-        for (let x = 0; x < W; x++) {
-            if (grid[y][x] === '=') {
-                for (let dy = -2; dy <= 2; dy++)
-                    for (let dx = -2; dx <= 2; dx++)
-                        if (inBounds(x + dx, y + dy) && !isWater(x + dx, y + dy))
-                            density[y + dy][x + dx] += 0.35 * (1 - Math.hypot(dx, dy) / 3);
-            }
-        }
+    // Strong extra density along existing roads
+    for (const r of roadTiles) {
+        chance(.1) ? addBlob(r.x, r.y, 0.65, 4.2, 1.6) : null;
     }
 
-    // ---------- 5. Paint buildings from density ----------
+    // Waterfront density
+    for (const w of waterTiles) {
+        chance(.25) ? addBlob(w.x, w.y, 0.5, 3.6, 1.7) : null;
+    }
+
+    // ---------- paint buildings ----------
     for (let y = 0; y < H; y++) {
         for (let x = 0; x < W; x++) {
-            if (isWater(x, y)) continue;
-            if (grid[y][x] === '=' || grid[y][x] === '-') continue;
+            if (isBlocked(x, y)) continue;
 
-            const d = density[y][x];
-            if (d < 0.18) continue; // countryside / empty
+            const d = dens[y][x];
+            if (d < 0.2) continue;
 
-            // Decide tile type
-            if (d > 1.15) {
-                set(x, y, '#');               // dense urban core
-            } else if (d > 0.75) {
-                set(x, y, chance(0.85) ? '#' : 'n');
-            } else if (d > 0.4) {
+            if (d > 1.25) {
+                set(x, y, '#');
+            } else if (d > 0.8) {
+                set(x, y, chance(0.82) ? '#' : 'n');
+            } else if (d > 0.45) {
                 set(x, y, chance(0.7) ? 'n' : 'h');
             } else {
-                set(x, y, chance(0.45) ? 'h' : grid[y][x]); // sparse
+                if (chance(0.4)) set(x, y, 'h');
             }
         }
     }
 
-    // ---------- 6. Landmarks & special tiles ----------
-    function placeNear(role, ch, count = 1) {
-        const c = centres.find(c => c.role === role);
-        if (!c) return;
-        let placed = 0;
-        for (let i = 0; i < 40 && placed < count; i++) {
-            const x = c.x + randInt(-4, 4);
-            const y = c.y + randInt(-4, 4);
-            if (set(x, y, ch)) placed++;
+    // ---------- landmarks ----------
+    function placeNear(role, ch, count = 1, rad = 3) {
+        const list = centres.filter(c => c.role === role);
+        for (const c of list) {
+            let placed = 0;
+            for (let i = 0; i < 30 && placed < count; i++) {
+                const x = c.x + randInt(-rad, rad);
+                const y = c.y + randInt(-rad, rad);
+                if (set(x, y, ch)) placed++;
+            }
         }
     }
 
-    placeNear('core', 'o', 1);        // central plaza marker
-    placeNear('core', 'H', 1);        // town hall / citadel
-    placeNear('market', '&', 3);      // shops / inns
+    placeNear('core', 'o', 1);     // central marker
+    placeNear('core', 'H', 1);     // civic
+    placeNear('market', '&', 3);
     placeNear('temple', '†', 2);
-    placeNear('noble', 'T', 1);       // palace / keep
+    placeNear('noble', 'T', 1);
     placeNear('craft', 'M', 3);
-    placeNear('docks', 'D', 4);       // warehouses / docks
+    placeNear('docks', 'D', 3);    // warehouses / docks
 
-    // Open up small plazas at centres
+    // Small plazas at centres
     for (const c of centres) {
         for (let dy = -1; dy <= 1; dy++)
             for (let dx = -1; dx <= 1; dx++)
-                if (chance(0.7)) set(c.x + dx, c.y + dy, '.');
-    }
-
-    // ---------- 7. Outer wall (optional) ----------
-    if (walled) {
-        // Simple rectangular-ish wall with rounded corners + gates
-        const wallMargin = Math.max(2, Math.floor(Math.min(cityW, cityH) * 0.04));
-        const left = originX + wallMargin;
-        const right = originX + cityW - wallMargin;
-        const top = originY + wallMargin;
-        const bottom = originY + cityH - wallMargin;
-
-        // Horizontal walls
-        for (let x = left; x <= right; x++) {
-            set(x, top, '█', true);
-            set(x, bottom, '█', true);
-        }
-        // Vertical walls
-        for (let y = top; y <= bottom; y++) {
-            set(left, y, '█', true);
-            set(right, y, '█', true);
-        }
-
-        // Gates on the four sides (aligned roughly with roads)
-        const gatePositions = [
-            { x: Math.floor((left + right) / 2), y: top },
-            { x: Math.floor((left + right) / 2), y: bottom },
-            { x: left, y: Math.floor((top + bottom) / 2) },
-            { x: right, y: Math.floor((top + bottom) / 2) }
-        ];
-        for (const g of gatePositions) {
-            set(g.x, g.y, '=', true);
-            set(g.x + 1, g.y, '=', true);
-            set(g.x - 1, g.y, '=', true);
-            set(g.x, g.y + 1, '=', true);
-            set(g.x, g.y - 1, '=', true);
-        }
-    }
-
-    // ---------- 8. Final cleanup ----------
-    // Make sure major roads stay visible
-    for (let y = 0; y < H; y++) {
-        for (let x = 0; x < W; x++) {
-            if (grid[y][x] === '=' || grid[y][x] === '-') continue;
-            // small chance to open alleys in dense areas
-            if (grid[y][x] === '#' && chance(0.03)) set(x, y, '-');
-        }
+                if (chance(0.65)) set(c.x + dx, c.y + dy, '.');
     }
 
     return grid;

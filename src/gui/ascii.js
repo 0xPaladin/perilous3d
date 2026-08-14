@@ -289,36 +289,37 @@ function buildAreaLegend() {
   for (const [key, info] of Object.entries(AREA_GLYPHS)) {
     if (seen.has(info.ch)) continue;
     seen.add(info.ch);
-    const label = key === '.' ? 'Open Space' :
-      key === '~' ? 'Water' :
-        key === '=' ? 'Major Road' :
-          key === '-' ? 'Street' :
-            key === '#' ? 'Dense Buildings' :
-              key === 'n' ? 'Medium Housing' :
-                key === 'h' ? 'Sparse Housing' :
-                  key === 'o' ? 'Central Plaza' :
-                    key === '†' ? 'Temple' :
-                      key === 'T' ? 'Keep/Palace' :
-                        key === 'H' ? 'Town Hall' :
-                          key === 'M' ? 'Workshop/Mill' :
-                            key === '&' ? 'Tavern/Shop' :
-                              key === 'D' ? 'Dock/Warehouse' :
-                                key === '█' ? 'City Wall' :
-                                  key === '≡' ? 'Elevated Highway' :
-                                    key === 'A' ? 'Arcology' :
-                                      key === 'C' ? 'Corporate Tower' :
-                                        key === 'N' ? 'Neon Commercial' :
-                                          key === 'R' ? 'Residential High-rise' :
-                                            key === 'r' ? 'Mid/Low Residential' :
-                                              key === 'S' ? 'Lower City/Slum' :
-                                                key === 'I' ? 'Industrial Zone' :
-                                                  key === '⛏' ? 'Transit Hub' :
-                                                    key === '⊘' ? 'Rubble/Ruins' :
-                                                      key === '☢' ? 'Radiation Zone' :
-                                                        key === '⌬' ? 'Alien Structure' :
-                                                          key === '⍓' ? 'Alien Tech' :
-                                                            key === '⌖' ? 'Alien Monument' :
-                                                              key;
+    const label = key === ' ' ? 'Open Space' :
+      key === '.' ? 'Park' :
+        key === '~' ? 'Water' :
+          key === '=' ? 'Major Road' :
+            key === '-' ? 'Street' :
+              key === '#' ? 'Dense Buildings' :
+                key === 'n' ? 'Medium Housing' :
+                  key === 'h' ? 'Sparse Housing' :
+                    key === 'o' ? 'Central Plaza' :
+                      key === '†' ? 'Temple' :
+                        key === 'T' ? 'Keep/Palace' :
+                          key === 'H' ? 'Town Hall' :
+                            key === 'M' ? 'Workshop/Mill' :
+                              key === '&' ? 'Tavern/Shop' :
+                                key === 'D' ? 'Dock/Warehouse' :
+                                  key === '█' ? 'City Wall' :
+                                    key === '≡' ? 'Elevated Highway' :
+                                      key === 'A' ? 'Arcology' :
+                                        key === 'C' ? 'Corporate Tower' :
+                                          key === 'N' ? 'Neon Commercial' :
+                                            key === 'R' ? 'Residential High-rise' :
+                                              key === 'r' ? 'Mid/Low Residential' :
+                                                key === 'S' ? 'Lower City/Slum' :
+                                                  key === 'I' ? 'Industrial Zone' :
+                                                    key === '⛏' ? 'Transit Hub' :
+                                                      key === '⊘' ? 'Rubble/Ruins' :
+                                                        key === '☢' ? 'Radiation Zone' :
+                                                          key === '⌬' ? 'Alien Structure' :
+                                                            key === '⍓' ? 'Alien Tech' :
+                                                              key === '⌖' ? 'Alien Monument' :
+                                                                key;
     html += `<span style="color:${info.color}">${info.ch} ${label}</span>`;
   }
   legendEl.innerHTML = html;

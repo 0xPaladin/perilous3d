@@ -174,13 +174,15 @@ python -m http.server 8000
 | `area-template` | `fantasy-town`, `fantasy-city`, `fantasy-city-ruins`, `sci-fi-city-district`, `post-epoc-ruins`, `alien-ruins` | Area template (scope=area) |
 | `area-w`    | 10–256                                                  | Area width in cells (scope=area)                         |
 | `area-h`    | 10–256                                                  | Area height in cells (scope=area)                        |
+| `area-river`| 0/1                                                     | Include river (scope=area, default 1)                    |
+| `area-bay`  | 0/1                                                     | Include bay (scope=area, default 1)                      |
 
 ## Controls
 
 - **OrbitControls**: left-click rotate, right-click pan, scroll to zoom
 - **lil-gui** (top-right panel):
   - **Display** → Scope (`terrain` / `site` / `area`), Display Mode (`3d` / `ascii`), Tile Size (5–80 km, ASCII only)
-  - **Parameters** → (terrain) Terrain, Climate, Safety, Map Size, Points, Place Features; (site) Template, Width, Height, Floors; (area) Template, Width, Height
+  - **Parameters** → (terrain) Terrain, Climate, Safety, Map Size, Points, Place Features; (site) Template, Width, Height, Floors; (area) Template, Width, Height, River, Bay
   - **Actions** → `New Region`, `Update`
   - **Info** → current seed (read-only)
 - **Locations panel** (left panel, below GUI): category select (Cities, Towns, Resources, Dungeons, Ruins, Landmarks, Outposts, Hazards, Obstacles, Areas, Trouble) → clickable item list → smooth fly-to camera; Zoom Out button returns to default view. In site mode, shows Rooms, Doors, Stairs. In area mode, shows Districts, Landmarks, Roads, Gates, Waterfront.

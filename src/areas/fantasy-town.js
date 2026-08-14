@@ -2,6 +2,8 @@
  * Generate a procedural fantasy-style town on an ASCII map.
  * Scale assumption: 1 tile ≈ 100 m (districts & major buildings, not individual houses).
  * 
+ * Pipeline: river? → road(s) → bay? → town
+ * 
  * size: 0.30 → small village
  * size: 0.45 → classic market town (default)
  * size: 0.60 → large town
@@ -33,13 +35,15 @@
 export function createTown(map, options = {}) {
     const {
         waterChar = '~',
+        roadChars = ['=', '-'],   // characters that count as roads
         size = 0.45,
         walled = true,
         preferWater = true,
+        preferRoad = true,
         seed = null
     } = options;
 
-    // ---------- seeded RNG (same as river / bay) ----------
+    // ---------- seeded RNG ----------
     let rngState = seed != null ? seed : (Math.random() * 0xffffffff) >>> 0;
     function rand() {
         rngState |= 0;
@@ -52,7 +56,7 @@ export function createTown(map, options = {}) {
     function chance(p) { return rand() < p; }
     function pick(arr) { return arr[Math.floor(rand() * arr.length)]; }
 
-    // ---------- normalize map ----------
+    // ---------- normalize ----------
     const H = map.length;
     if (H === 0) return map;
     const W = typeof map[0] === 'string' ? map[0].length : map[0].length;
@@ -60,210 +64,178 @@ export function createTown(map, options = {}) {
         typeof row === 'string' ? row.split('') : [...row]
     );
 
-    const isWater = (x, y) =>
-        x >= 0 && x < W && y >= 0 && y < H && grid[y][x] === waterChar;
     const inBounds = (x, y) => x >= 0 && x < W && y >= 0 && y < H;
-    const isOpen = (x, y) =>
-        inBounds(x, y) && grid[y][x] !== waterChar && grid[y][x] !== '#';
+    const isWater = (x, y) => inBounds(x, y) && grid[y][x] === waterChar;
+    const isRoad = (x, y) => inBounds(x, y) && roadChars.includes(grid[y][x]);
+    const isBlocked = (x, y) => isWater(x, y) || isRoad(x, y); // never overwrite these
 
-    // ---------- find a good town centre ----------
-    let cx, cy;
-    const candidates = [];
-
-    // Prefer tiles near water
-    if (preferWater) {
-        for (let y = 2; y < H - 2; y++) {
-            for (let x = 2; x < W - 2; x++) {
-                if (isWater(x, y)) continue;
-                let nearWater = 0;
-                for (let dy = -3; dy <= 3; dy++)
-                    for (let dx = -3; dx <= 3; dx++)
-                        if (isWater(x + dx, y + dy)) nearWater++;
-                if (nearWater > 0) {
-                    candidates.push({ x, y, score: nearWater + rand() * 3 });
-                }
-            }
-        }
-    }
-
-    // Fallback / additional central candidates
-    const midX = Math.floor(W / 2);
-    const midY = Math.floor(H / 2);
-    for (let i = 0; i < 40; i++) {
-        const x = midX + randInt(-Math.floor(W * 0.3), Math.floor(W * 0.3));
-        const y = midY + randInt(-Math.floor(H * 0.3), Math.floor(H * 0.3));
-        if (inBounds(x, y) && !isWater(x, y)) {
-            candidates.push({ x, y, score: 5 + rand() * 5 });
-        }
-    }
-
-    if (candidates.length === 0) {
-        cx = midX; cy = midY;
-    } else {
-        candidates.sort((a, b) => b.score - a.score);
-        const best = candidates[randInt(0, Math.min(8, candidates.length - 1))];
-        cx = best.x; cy = best.y;
-    }
-
-    // ---------- town radius ----------
-    const radius = Math.max(4, Math.floor(Math.min(W, H) * size * 0.5));
-
-    // ---------- helper: place a tile if possible ----------
     function set(x, y, ch, force = false) {
         if (!inBounds(x, y)) return false;
-        if (!force && (grid[y][x] === waterChar || grid[y][x] === '█')) return false;
+        if (!force && isBlocked(x, y)) return false;
         grid[y][x] = ch;
         return true;
     }
 
-    // ---------- 1. Main roads (cross + diagonals toward edges / water) ----------
-    const roadDirs = [
-        { dx: 1, dy: 0 }, { dx: -1, dy: 0 },
-        { dx: 0, dy: 1 }, { dx: 0, dy: -1 },
-        { dx: 1, dy: 1 }, { dx: 1, dy: -1 },
-        { dx: -1, dy: 1 }, { dx: -1, dy: -1 }
-    ];
+    // ---------- collect existing roads & water for scoring ----------
+    const roadTiles = [];
+    const waterTiles = [];
+    for (let y = 0; y < H; y++) {
+        for (let x = 0; x < W; x++) {
+            if (isRoad(x, y)) roadTiles.push({ x, y });
+            if (isWater(x, y)) waterTiles.push({ x, y });
+        }
+    }
 
-    function carveRoad(dx, dy, maxLen) {
-        let x = cx, y = cy;
-        for (let i = 0; i < maxLen; i++) {
-            x += dx; y += dy;
-            if (!inBounds(x, y) || isWater(x, y)) break;
-            set(x, y, '=');
-            // occasionally widen
-            if (chance(0.25)) {
-                if (dx === 0) { set(x - 1, y, '='); set(x + 1, y, '='); }
-                else if (dy === 0) { set(x, y - 1, '='); set(x, y + 1, '='); }
+    // ---------- find a good town centre ----------
+    // Score candidates by proximity to roads and water
+    const candidates = [];
+    const margin = 3;
+
+    for (let y = margin; y < H - margin; y++) {
+        for (let x = margin; x < W - margin; x++) {
+            if (isBlocked(x, y)) continue;
+
+            let score = rand() * 2; // small random jitter
+
+            // Prefer near roads
+            if (preferRoad && roadTiles.length) {
+                let minRoad = Infinity;
+                for (const r of roadTiles) {
+                    const d = Math.hypot(r.x - x, r.y - y);
+                    if (d < minRoad) minRoad = d;
+                }
+                if (minRoad < 12) score += (12 - minRoad) * 1.8;
+            }
+
+            // Prefer near water
+            if (preferWater && waterTiles.length) {
+                let minWater = Infinity;
+                for (const w of waterTiles) {
+                    const d = Math.hypot(w.x - x, w.y - y);
+                    if (d < minWater) minWater = d;
+                }
+                if (minWater < 10) score += (10 - minWater) * 1.4;
+            }
+
+            // Mild preference for more central locations
+            const distCentre = Math.hypot(x - W / 2, y - H / 2);
+            score += Math.max(0, 8 - distCentre * 0.15);
+
+            candidates.push({ x, y, score });
+        }
+    }
+
+    // Pick one of the better candidates
+    candidates.sort((a, b) => b.score - a.score);
+    const top = candidates.slice(0, Math.max(8, Math.floor(candidates.length * 0.08)));
+    const chosen = top.length ? pick(top) : { x: Math.floor(W / 2), y: Math.floor(H / 2) };
+    const cx = chosen.x;
+    const cy = chosen.y;
+
+    // ---------- town radius ----------
+    const radius = Math.max(5, Math.floor(Math.min(W, H) * size * 0.5));
+
+    // ---------- density field that favours roads & rivers ----------
+    const dens = Array.from({ length: H }, () => new Float32Array(W));
+
+    function addBlob(bx, by, strength, rad, power = 1.5) {
+        const r = Math.ceil(rad);
+        const y0 = Math.max(0, Math.floor(by - r - 1));
+        const y1 = Math.min(H, Math.ceil(by + r + 2));
+        const x0 = Math.max(0, Math.floor(bx - r - 1));
+        const x1 = Math.min(W, Math.ceil(bx + r + 2));
+
+        for (let y = y0; y < y1; y++) {
+            for (let x = x0; x < x1; x++) {
+                if (isBlocked(x, y)) continue;
+                const dist = Math.hypot(x - bx, y - by);
+                if (dist > rad) continue;
+                dens[y][x] += strength * Math.pow(1 - dist / rad, power);
             }
         }
     }
 
-    // Primary cross
-    carveRoad(1, 0, radius + 3);
-    carveRoad(-1, 0, radius + 3);
-    carveRoad(0, 1, radius + 3);
-    carveRoad(0, -1, radius + 3);
+    // Base density around the centre
+    addBlob(cx, cy, 1.1, radius * 0.9, 1.45);
 
-    // A couple of secondary roads
-    for (let i = 0; i < 3; i++) {
-        const d = pick(roadDirs);
-        carveRoad(d.dx, d.dy, randInt(radius - 2, radius + 2));
+    // Strong extra density along existing roads
+    for (const r of roadTiles) {
+        chance(.05) ? addBlob(r.x, r.y, 0.7, 4.5, 1.6) : null;
     }
 
-    // ---------- 2. Central plaza ----------
+    // Extra density along water (waterfront development)
+    for (const w of waterTiles) {
+        chance(.15) ? addBlob(w.x, w.y, 0.55, 3.8, 1.7) : null;
+    }
+
+    // ---------- 1. Central plaza ----------
     for (let dy = -1; dy <= 1; dy++)
         for (let dx = -1; dx <= 1; dx++)
             set(cx + dx, cy + dy, '.');
     set(cx, cy, 'o'); // well / fountain
 
-    // ---------- 3. Key landmarks ----------
-    function placeLandmark(ch, preferredDirs, minDist = 2, maxDist = 5) {
-        for (let attempt = 0; attempt < 30; attempt++) {
-            const dir = pick(preferredDirs);
-            const dist = randInt(minDist, maxDist);
-            const x = cx + dir.dx * dist + randInt(-1, 1);
-            const y = cy + dir.dy * dist + randInt(-1, 1);
+    // ---------- 2. Key landmarks (biased toward roads when possible) ----------
+    function placeLandmark(ch, maxAttempts = 35) {
+        for (let i = 0; i < maxAttempts; i++) {
+            // Prefer spots near roads
+            let x, y;
+            if (preferRoad && roadTiles.length && chance(0.6)) {
+                const r = pick(roadTiles);
+                x = r.x + randInt(-3, 3);
+                y = r.y + randInt(-3, 3);
+            } else {
+                const angle = rand() * Math.PI * 2;
+                const dist = randInt(2, Math.floor(radius * 0.75));
+                x = Math.round(cx + Math.cos(angle) * dist);
+                y = Math.round(cy + Math.sin(angle) * dist);
+            }
             if (set(x, y, ch)) return { x, y };
         }
         return null;
     }
 
-    const cardinals = [
-        { dx: 1, dy: 0 }, { dx: -1, dy: 0 },
-        { dx: 0, dy: 1 }, { dx: 0, dy: -1 }
-    ];
+    placeLandmark('†');   // temple
+    placeLandmark('T');   // keep / manor
+    placeLandmark('M');   // smith / mill
+    placeLandmark('&');   // tavern
+    placeLandmark('H');   // guildhall / town hall
 
-    placeLandmark('†', cardinals, 3, 6);           // temple
-    placeLandmark('T', cardinals, 4, 7);           // keep / manor (or tower)
-    placeLandmark('M', [{ dx: 1, dy: 0 }, { dx: -1, dy: 0 }, { dx: 0, dy: 1 }], 3, 6); // smith / mill
-    placeLandmark('&', cardinals, 2, 4);           // tavern / inn
-    placeLandmark('H', cardinals, 3, 5);           // guildhall / town hall
+    // ---------- 3. Housing from density field ----------
+    for (let y = 0; y < H; y++) {
+        for (let x = 0; x < W; x++) {
+            if (isBlocked(x, y)) continue;
+            if (grid[y][x] === '.' || grid[y][x] === 'o') continue;
+            if (['†', 'T', 'M', '&', 'H'].includes(grid[y][x])) continue;
 
-    // ---------- 4. Housing districts (blob growth) ----------
-    function growDistrict(centerX, centerY, char, targetCount, density = 0.65) {
-        const queue = [{ x: centerX, y: centerY }];
-        const visited = new Set();
-        let placed = 0;
+            const d = dens[y][x];
+            if (d < 0.22) continue;
 
-        while (queue.length && placed < targetCount) {
-            const idx = randInt(0, queue.length - 1);
-            const { x, y } = queue.splice(idx, 1)[0];
-            const key = `${x},${y}`;
-            if (visited.has(key)) continue;
-            visited.add(key);
-
-            if (!inBounds(x, y) || isWater(x, y)) continue;
-            if (grid[y][x] === '=' || grid[y][x] === '.' || grid[y][x] === 'o') continue;
-            if (grid[y][x] === '†' || grid[y][x] === 'T' || grid[y][x] === 'M' ||
-                grid[y][x] === '&' || grid[y][x] === 'H') continue;
-
-            if (chance(density)) {
-                set(x, y, char);
-                placed++;
-            }
-
-            // neighbours
-            for (const d of [{ dx: 1, dy: 0 }, { dx: -1, dy: 0 }, { dx: 0, dy: 1 }, { dx: 0, dy: -1 }]) {
-                const nx = x + d.dx, ny = y + d.dy;
-                if (inBounds(nx, ny) && !visited.has(`${nx},${ny}`)) {
-                    queue.push({ x: nx, y: ny });
-                }
+            if (d > 1.1) {
+                set(x, y, '#');                     // dense core
+            } else if (d > 0.65) {
+                set(x, y, chance(0.8) ? '#' : 'n');
+            } else if (d > 0.35) {
+                set(x, y, chance(0.65) ? 'n' : 'h');
+            } else {
+                if (chance(0.4)) set(x, y, 'h');
             }
         }
     }
 
-    // Dense housing around centre
-    growDistrict(cx, cy, '#', Math.floor(radius * radius * 0.55), 0.75);
-
-    // A bit of poorer / sparser housing further out
-    growDistrict(cx + randInt(-2, 2), cy + randInt(-2, 2), 'n', Math.floor(radius * 1.8), 0.45);
-
-    // ---------- 5. Optional wall ----------
-    if (walled) {
-        const wallR = radius + 1;
-        const gates = [];
-
-        for (let a = 0; a < 360; a += 3) {
-            const rad = (a * Math.PI) / 180;
-            const x = Math.round(cx + Math.cos(rad) * wallR);
-            const y = Math.round(cy + Math.sin(rad) * wallR);
-            if (inBounds(x, y) && !isWater(x, y)) {
-                set(x, y, '█', true);
-            }
-        }
-
-        // Punch gates on the main road axes
-        const gateOffsets = [
-            { dx: wallR, dy: 0 }, { dx: -wallR, dy: 0 },
-            { dx: 0, dy: wallR }, { dx: 0, dy: -wallR }
-        ];
-        for (const g of gateOffsets) {
-            const gx = cx + g.dx;
-            const gy = cy + g.dy;
-            if (inBounds(gx, gy)) {
-                set(gx, gy, '=', true);
-                // clear a little around the gate
-                set(gx + (g.dx ? 0 : 1), gy + (g.dy ? 0 : 1), '=', true);
-                set(gx + (g.dx ? 0 : -1), gy + (g.dy ? 0 : -1), '=', true);
-                gates.push({ x: gx, y: gy });
-            }
-        }
-    }
-
-    // ---------- 6. Final polish ----------
-    // Make sure the very centre plaza stays open
+    // ---------- 5. Final polish ----------
+    // Make sure plaza stays clear
     for (let dy = -1; dy <= 1; dy++)
         for (let dx = -1; dx <= 1; dx++)
-            if (inBounds(cx + dx, cy + dy) && grid[cy + dy][cx + dx] !== waterChar)
+            if (inBounds(cx + dx, cy + dy) && !isWater(cx + dx, cy + dy) && !isRoad(cx + dx, cy + dy))
                 grid[cy + dy][cx + dx] = (dx === 0 && dy === 0) ? 'o' : '.';
 
-    // Scatter a few extra flavour tiles
-    for (let i = 0; i < 8; i++) {
-        const x = cx + randInt(-radius, radius);
-        const y = cy + randInt(-radius, radius);
-        if (isOpen(x, y) && grid[y][x] === '#') {
-            if (chance(0.3)) set(x, y, '&'); // extra taverns / shops
-        }
+    // Scatter a few extra flavour buildings near roads
+    for (let i = 0; i < 7; i++) {
+        if (!roadTiles.length) break;
+        const r = pick(roadTiles);
+        const x = r.x + randInt(-2, 2);
+        const y = r.y + randInt(-2, 2);
+        if (chance(0.4)) set(x, y, '&');
     }
 
     return grid;

@@ -10,7 +10,7 @@ import { createScene, animate } from './renderer.js';
 import { progressPanel, updateSeedDisplay } from './gui/ui.js';
 import { initGUI } from './gui/gui.js';
 import { initItemsPanel } from './gui/items.js';
-import { showAsciiMap, showAsciiSite, hideAsciiMap } from './gui/ascii.js';
+import { showAsciiMap, showAsciiSite, showAsciiArea, hideAsciiMap } from './gui/ascii.js';
 
 
 progressPanel.init();
@@ -219,6 +219,10 @@ function generateAreaWrapper(opts) {
   url.searchParams.set('area-template', opts.template);
   url.searchParams.set('area-w', opts.w);
   url.searchParams.set('area-h', opts.h);
+  if (opts.addRiver) url.searchParams.set('area-river', '1');
+  else url.searchParams.delete('area-river');
+  if (opts.addBay) url.searchParams.set('area-bay', '1');
+  else url.searchParams.delete('area-bay');
   history.replaceState({}, '', url);
 }
 
@@ -311,6 +315,8 @@ const initialSiteFloors = urlParams.get('site-floors') ? parseInt(urlParams.get(
 const initialAreaTemplate = urlParams.get('area-template') || 'fantasy-town';
 const initialAreaW = urlParams.get('area-w') ? parseInt(urlParams.get('area-w'), 10) : 60;
 const initialAreaH = urlParams.get('area-h') ? parseInt(urlParams.get('area-h'), 10) : 60;
+const initialAreaRiver = urlParams.get('area-river') !== '0';
+const initialAreaBay = urlParams.get('area-bay') !== '0';
 
 // Init GUI
 const { gui, options } = initGUI({
@@ -335,6 +341,8 @@ const { gui, options } = initGUI({
   initialAreaTemplate,
   initialAreaW,
   initialAreaH,
+  initialAreaRiver,
+  initialAreaBay,
 });
 
 if (initialScope === 'site') {
@@ -351,6 +359,8 @@ if (initialScope === 'site') {
     template: initialAreaTemplate,
     w: initialAreaW,
     h: initialAreaH,
+    addRiver: initialAreaRiver,
+    addBay: initialAreaBay,
   });
 } else {
   generate(initialTemplate, initialSeed, initialTerrain, initialClimate, initialSafety, initialSize, initialNumPoints, initialFeaturesEnabled, initialDisplayMode, initialTileSize);

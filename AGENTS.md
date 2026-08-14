@@ -247,7 +247,7 @@ All user controls are powered by `lil-gui` (`src/gui/gui.js`). The GUI is initia
 - **Display** folder: Scope dropdown (`terrain` / `site` / `area`), Display Mode dropdown (`3d` / `ascii`), Tile Size slider (5–80 km, enabled only in ASCII mode). When Scope=Site or Scope=Area, Display Mode is locked to ASCII and Tile Size is disabled.
 - **Parameters** folder (terrain): Terrain (wetland/lowland/woodland/highland/wasteland), Climate (Arctic/Sub-arctic/Temperate/Sub-tropical/Tropical), Safety (Perilous/Dangerous/Unsafe/Safe → 0/1/2/3 cities), Map Size (50–400 km), Points (0=auto), Place Features (toggle)
 - **Parameters** folder (site): Template (hideout, bandit-camp, lair, warehouse, dungeon), Width (10–256), Height (10–256), Floors (1–10)
-- **Parameters** folder (area): Template (fantasy-town, fantasy-city, fantasy-city-ruins, sci-fi-city-district, post-epoc-ruins, alien-ruins), Width (10–256), Height (10–256)
+- **Parameters** folder (area): Template (fantasy-town, fantasy-city, fantasy-city-ruins, sci-fi-city-district, post-epoc-ruins, alien-ruins), Width (10–256), Height (10–256), River (checkbox), Bay (checkbox)
 - **Actions** folder: New Region, Update (re-draw with same seed + current GUI params)
 - **Info** folder: read-only Seed display (auto-updates on generation)
 
