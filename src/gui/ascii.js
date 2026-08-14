@@ -1,5 +1,6 @@
 import { BIOME_GLYPHS, BIOME_GLYPHS_BY_INDEX, BIOME_NAMES } from "../terrain/config.js";
 import { SITE_GLYPHS, CELL } from "../sites/index.js";
+import { AREA_GLYPHS } from "../areas/index.js";
 
 let rotDisplay = null;
 let rotContainer = null;
@@ -273,6 +274,78 @@ export function showAsciiSite(display, state, tileSize) {
   }
 
   buildSiteLegend();
+}
+
+function buildAreaLegend() {
+  if (!legendEl) {
+    legendEl = document.createElement("div");
+    legendEl.id = "ascii-legend";
+    rotContainer.appendChild(legendEl);
+  }
+
+  let html = "";
+  // Build a readable legend from AREA_GLYPHS
+  const seen = new Set();
+  for (const [key, info] of Object.entries(AREA_GLYPHS)) {
+    if (seen.has(info.ch)) continue;
+    seen.add(info.ch);
+    const label = key === '.' ? 'Open Space' :
+      key === '~' ? 'Water' :
+        key === '=' ? 'Major Road' :
+          key === '-' ? 'Street' :
+            key === '#' ? 'Dense Buildings' :
+              key === 'n' ? 'Medium Housing' :
+                key === 'h' ? 'Sparse Housing' :
+                  key === 'o' ? 'Central Plaza' :
+                    key === '†' ? 'Temple' :
+                      key === 'T' ? 'Keep/Palace' :
+                        key === 'H' ? 'Town Hall' :
+                          key === 'M' ? 'Workshop/Mill' :
+                            key === '&' ? 'Tavern/Shop' :
+                              key === 'D' ? 'Dock/Warehouse' :
+                                key === '█' ? 'City Wall' :
+                                  key === '≡' ? 'Elevated Highway' :
+                                    key === 'A' ? 'Arcology' :
+                                      key === 'C' ? 'Corporate Tower' :
+                                        key === 'N' ? 'Neon Commercial' :
+                                          key === 'R' ? 'Residential High-rise' :
+                                            key === 'r' ? 'Mid/Low Residential' :
+                                              key === 'S' ? 'Lower City/Slum' :
+                                                key === 'I' ? 'Industrial Zone' :
+                                                  key === '⛏' ? 'Transit Hub' :
+                                                    key === '⊘' ? 'Rubble/Ruins' :
+                                                      key === '☢' ? 'Radiation Zone' :
+                                                        key === '⌬' ? 'Alien Structure' :
+                                                          key === '⍓' ? 'Alien Tech' :
+                                                            key === '⌖' ? 'Alien Monument' :
+                                                              key;
+    html += `<span style="color:${info.color}">${info.ch} ${label}</span>`;
+  }
+  legendEl.innerHTML = html;
+}
+
+export function showAsciiArea(display, state, tileSize) {
+  const container = ensureContainer();
+  container.style.display = "block";
+  currentMode = 'area';
+
+  const { cols, rows, grid } = display;
+
+  if (!rotDisplay || displayCols !== cols || displayRows !== rows) {
+    createDisplay(cols, rows);
+  }
+  rotDisplay.clear();
+
+  // Draw each cell using AREA_GLYPHS
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const ch = grid[r][c];
+      const glyphInfo = AREA_GLYPHS[ch] || AREA_GLYPHS['.'];
+      rotDisplay.draw(c, r, glyphInfo.ch, glyphInfo.color, glyphInfo.bg);
+    }
+  }
+
+  buildAreaLegend();
 }
 
 export function hideAsciiMap() {

@@ -75,6 +75,26 @@ perilous3d/
     │   ├── fill-floorplan.js # generateFillFloorPlan(seed, shape) — rectangle/circle tiling with no gaps,
     │   │                        #   randomized spanning tree connectivity.
     │   └── room.js         # Room class for ROT.js-style rectangular room rendering (used by digger/dungeon)
+    ├── areas/
+    │   ├── index.js        # generateArea(opts) — entry point for area generation (fantasy towns/cities,
+    │   │                    #   sci-fi districts, post-apoc/alien ruins). Scale: 1 tile ≈ 100 m.
+    │   │                    #   Returns { display, state } where display = { cols, rows, grid, width, height }
+    │   │                    #   (2D glyph grid for ASCII rendering) and state = { template, seed, width, height,
+    │   │                    #   districts, landmarks, roads, gates, waterfront }.
+    │   │                    #   Templates: fantasy-town, fantasy-city, fantasy-city-ruins, sci-fi-city-district,
+    │   │                    #   post-epoc-ruins, alien-ruins.
+    │   │                    #   Exports: generateArea, AREA_GLYPHS
+    │   ├── fantasy-town.js # createTown(map, options) — procedural fantasy town with roads, plaza, landmarks,
+    │   │                    #   housing districts, optional wall + gates. Returns string[] map.
+    │   ├── fantasy-city.js # createCity(map, options) — multi-centre fantasy city with district density field,
+    │   │                    #   road network, landmarks, optional outer wall. Returns string[] map.
+    │   ├── sci-fi-district.js # createDistrict(map, options) — cyberpunk/sci-fi district with multi-centre
+    │   │                    #   anchors, grid/organic roads, elevated highways, density-based building types.
+    │   │                    #   Returns string[] map.
+    │   ├── bay.js          # createBay(map, side, options) — carves a bay into one edge of the map.
+    │   │                    #   Returns string[] map.
+    │   └── river.js        # createRiver(map, direction, options) — carves a meandering river across the map
+    │                       #   using midpoint displacement. Returns string[] map.
     ├── gui/
     │   ├── gui.js         # lil-gui initialization: folders for Template, Parameters, Display, Actions, Info
     │   ├── items.js       # locations panel: category select (Cities, Towns, Resources, Dungeons,
@@ -99,6 +119,7 @@ perilous3d/
 - **mesh/mesh_mountain.js**, **mesh/mesh_terrain.js**, **mesh/mesh_tree.js** use `MeshStandardMaterial` with `flatShading: true`, `vertexColors: true`; import `three` via importmap
 - No external APIs, no build tooling, no bundler — keep it that way unless asked
 - **Site generation** (`src/sites/index.js`): `generateSite(opts)` returns `{ display, state }` matching the `buildRegion()` shape. `display` = `{ cols, rows, grid, width, height }` where `grid` is a 2D array of cell-type codes (0=wall, 1=floor, 2=door, 3=stairs). `state` = `{ template, floors, currentFloor, rooms, doors, stairs, width, height }`. Site generation is ASCII-only — 3D rendering is not available for sites. The `CELL` enum and `SITE_GLYPHS` map are exported for ASCII rendering.
+- **Area generation** (`src/areas/index.js`): `generateArea(opts)` returns `{ display, state }`. `display` = `{ cols, rows, grid, width, height }` where `grid` is a 2D array of glyph characters (strings). `state` = `{ template, seed, width, height, districts, landmarks, roads, gates, waterfront }`. Area generation is ASCII-only — 3D rendering is not available for areas. The `AREA_GLYPHS` map is exported for ASCII rendering. Scale: 1 tile ≈ 100 m. River and bay features are configurable via `addRiver` and `addBay` options (both default `true`).
 
 ## Key Extension Points
 
@@ -121,6 +142,11 @@ perilous3d/
 | Generate site maps               | `src/sites/index.js` → `generateSite(opts)` — calls `generateMultiFloorPlan` (hideout), `ROT.Map.Cellular` (bandit-camp/lair), `generateFillFloorPlan` (warehouse), `ROT.Map.Digger` (dungeon) |
 | Tune site room sizes             | `src/sites/floorplan.js` → `generateMultiFloorPlan()` options: `minLeafSize`, `minRoomSize`, `padding`, `maxDepth`, `stopProb`, `stairCount`                                               |
 | Tune site fill density           | `src/sites/fill-floorplan.js` → `generateFillFloorPlan()` options: `minRoomSize`, `maxDepth`, `stopProb`, `extraConnectionChance`                                                         |
+| Generate area maps               | `src/areas/index.js` → `generateArea(opts)` — calls `createTown` (fantasy-town), `createCity` (fantasy-city/fantasy-city-ruins), `createDistrict` (sci-fi-city-district), or decayed town (post-epoc-ruins/alien-ruins). River and bay are configurable via `addRiver`/`addBay` options. |
+| Tune area size                   | `src/areas/index.js` → `generateArea()` — `w`/`h` clamped to 20–256 cells. Default 60×60.                                                                                                   |
+| Tune fantasy town density        | `src/areas/fantasy-town.js` → `createTown()` options: `size` (0.25–0.7), `walled`, `preferWater`                                                                                             |
+| Tune fantasy city density        | `src/areas/fantasy-city.js` → `createCity()` options: `size` (0.5–0.95), `walled`, `preferWater`                                                                                            |
+| Tune sci-fi district density     | `src/areas/sci-fi-district.js` → `createDistrict()` options: `size` (0.6–0.95), `density` (0–1), `elevated`, `preferWater`                                                                   |
 
 ## Algorithm Notes
 
@@ -206,7 +232,8 @@ Seed → mulberry32 PRNG → random points scaled by map area (~3K min, ~15-20K 
   - A legend below the map shows all biome and feature glyphs with their colors.
 - **`hideAsciiMap()`** — hides the ROT.js container and restores the FPS overlay when switching back to 3D mode.
 - **`showAsciiSite(display, state, tileSize)`** — renders a site (dungeon/hideout/etc.) as a ROT.Display grid. Each cell is drawn using `SITE_GLYPHS` from `src/sites/index.js` (wall `#`, floor `.`, door `+`, stairs `>`). A site-specific legend is shown below the grid.
-- **`gui/gui.js`** — Display folder with `displayMode` dropdown (`3d` / `ascii`) and `tileSize` slider (5–80 km, enabled only in ASCII mode). Scope dropdown (`terrain` / `site`) in the Display folder switches between terrain and site parameter folders.
+- **`showAsciiArea(display, state, tileSize)`** — renders an area (fantasy town/city, sci-fi district, post-apoc/alien ruins) as a ROT.Display grid. Each cell is drawn using `AREA_GLYPHS` from `src/areas/index.js`. The grid contains glyph characters directly (not cell-type codes). An area-specific legend is shown below the grid.
+- **`gui/gui.js`** — Display folder with `displayMode` dropdown (`3d` / `ascii`) and `tileSize` slider (5–80 km, enabled only in ASCII mode). Scope dropdown (`terrain` / `site` / `area`) in the Display folder switches between terrain, site, and area parameter folders.
 
 ### Scale
 
@@ -217,14 +244,15 @@ Seed → mulberry32 PRNG → random points scaled by map area (~3K min, ~15-20K 
 ### UI
 
 All user controls are powered by `lil-gui` (`src/gui/gui.js`). The GUI is initialized by `main.js` and exposes:
-- **Display** folder: Scope dropdown (`terrain` / `site`), Display Mode dropdown (`3d` / `ascii`), Tile Size slider (5–80 km, enabled only in ASCII mode). When Scope=Site, Display Mode is locked to ASCII and Tile Size is disabled.
+- **Display** folder: Scope dropdown (`terrain` / `site` / `area`), Display Mode dropdown (`3d` / `ascii`), Tile Size slider (5–80 km, enabled only in ASCII mode). When Scope=Site or Scope=Area, Display Mode is locked to ASCII and Tile Size is disabled.
 - **Parameters** folder (terrain): Terrain (wetland/lowland/woodland/highland/wasteland), Climate (Arctic/Sub-arctic/Temperate/Sub-tropical/Tropical), Safety (Perilous/Dangerous/Unsafe/Safe → 0/1/2/3 cities), Map Size (50–400 km), Points (0=auto), Place Features (toggle)
 - **Parameters** folder (site): Template (hideout, bandit-camp, lair, warehouse, dungeon), Width (10–256), Height (10–256), Floors (1–10)
+- **Parameters** folder (area): Template (fantasy-town, fantasy-city, fantasy-city-ruins, sci-fi-city-district, post-epoc-ruins, alien-ruins), Width (10–256), Height (10–256)
 - **Actions** folder: New Region, Update (re-draw with same seed + current GUI params)
 - **Info** folder: read-only Seed display (auto-updates on generation)
 
-When Scope=Site, the terrain Parameters folder is hidden and the site Parameters folder is shown. The Generate flow calls `generateSite()` instead of `buildRegion()`, and the ASCII renderer draws the site grid using `SITE_GLYPHS`.
+When Scope=Site, the terrain Parameters folder is hidden and the site Parameters folder is shown. When Scope=Area, the terrain and site Parameters folders are hidden and the area Parameters folder is shown. The Generate flow calls `generateSite()` or `generateArea()` instead of `buildRegion()`, and the ASCII renderer draws the site/area grid using `SITE_GLYPHS` or `AREA_GLYPHS`.
 
-A **Locations panel** (`gui/items.js`) sits on the left with a category select (Cities, Towns, Resources, Dungeons, Ruins, Landmarks, Outposts, Hazards, Obstacles, Areas, Trouble), a clickable item list (fly-to camera on click), and a Zoom Out button. In site mode, the panel shows Rooms, Doors, and Stairs lists instead. Dungeons, Ruins, Landmarks display generated names where available. Hazards/obstacles/areas display their type; trouble displays danger type; factions display faction type and are bound to a random city/town.
+A **Locations panel** (`gui/items.js`) sits on the left with a category select (Cities, Towns, Resources, Dungeons, Ruins, Landmarks, Outposts, Hazards, Obstacles, Areas, Trouble), a clickable item list (fly-to camera on click), and a Zoom Out button. In site mode, the panel shows Rooms, Doors, and Stairs lists instead. In area mode, the panel shows Districts, Landmarks, Roads, Gates, and Waterfront lists. Dungeons, Ruins, Landmarks display generated names where available. Hazards/obstacles/areas display their type; trouble displays danger type; factions display faction type and are bound to a random city/town.
 
 The FPS counter remains as a DOM overlay in the bottom-right corner (`index.html`) and is hidden when ASCII mode is active, while the seed display was removed from DOM and moved into the GUI Info panel.

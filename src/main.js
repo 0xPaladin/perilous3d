@@ -5,6 +5,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { seedFromString } from './core/prng.js';
 import { buildRegion } from './terrain/terrain.js';
 import { generateSite } from './sites/index.js';
+import { generateArea } from './areas/index.js';
 import { createScene, animate } from './renderer.js';
 import { progressPanel, updateSeedDisplay } from './gui/ui.js';
 import { initGUI } from './gui/gui.js';
@@ -168,6 +169,59 @@ function generateSiteWrapper(opts) {
   history.replaceState({}, '', url);
 }
 
+function generateAreaWrapper(opts) {
+  app.seedStr = opts.seed;
+  const seed = seedFromString(opts.seed);
+  const seedNum = seed.toString(36).toUpperCase();
+  app.seed = seedNum;
+  updateSeedDisplay(seedNum);
+
+  progressPanel.show(1, 2, 'generating area ...', opts.template);
+  progressPanel.show(2, 2, 'finishing ...', opts.template);
+
+  const canvas = document.getElementById('container');
+  canvas.innerHTML = '';
+
+  let result;
+  try {
+    result = generateArea(opts);
+  } catch (e) {
+    console.error('area generation failed:', e);
+    progressPanel.hide();
+    return;
+  }
+
+  progressPanel.hide();
+
+  const oldCanvas = canvas.querySelector('canvas');
+  if (oldCanvas) oldCanvas.remove();
+
+  const { display, state } = result;
+  logAreaStats(display, state);
+
+  app.display = display;
+  app.state = state;
+
+  // Area is ASCII-only — always show ASCII map
+  hideAsciiMap();
+  if (app.sceneState) {
+    if (app.sceneState.stopAnimate) app.sceneState.stopAnimate();
+    app.sceneState.renderer?.domElement?.remove();
+    app.sceneState = null;
+  }
+  showAsciiArea(display, state, 1);
+  initItemsPanel(app);
+
+  // URL sync
+  const url = new URL(window.location);
+  url.searchParams.set('scope', 'area');
+  url.searchParams.set('seed', seedNum);
+  url.searchParams.set('area-template', opts.template);
+  url.searchParams.set('area-w', opts.w);
+  url.searchParams.set('area-h', opts.h);
+  history.replaceState({}, '', url);
+}
+
 const BIOME_NAMES = [
   'Marine', 'Hot desert', 'Cold desert', 'Savanna', 'Grassland',
   'Tropical seasonal forest', 'Temperate deciduous forest', 'Tropical rainforest',
@@ -225,6 +279,18 @@ function logSiteStats(display, state, params) {
   console.log('Stairs:', state.stairs.length);
 }
 
+function logAreaStats(display, state, params) {
+  console.log('=== Area Stats ===');
+  console.log('Parameters: ', params);
+  console.log('Template:', state.template);
+  console.log('Size:', `${state.width} x ${state.height}`);
+  console.log('Districts:', state.districts || []);
+  console.log('Landmarks:', state.landmarks || []);
+  console.log('Roads:', state.roads || []);
+  console.log('Gates:', state.gates || []);
+  console.log('Waterfront tiles:', state.waterfront || []);
+}
+
 // Load URL seed or generate new
 const urlParams = new URLSearchParams(window.location.search);
 const initialScope = urlParams.get('scope') || 'terrain';
@@ -242,12 +308,16 @@ const initialSiteTemplate = urlParams.get('site-template') || 'hideout';
 const initialSiteW = urlParams.get('site-w') ? parseInt(urlParams.get('site-w'), 10) : 40;
 const initialSiteH = urlParams.get('site-h') ? parseInt(urlParams.get('site-h'), 10) : 30;
 const initialSiteFloors = urlParams.get('site-floors') ? parseInt(urlParams.get('site-floors'), 10) : 1;
+const initialAreaTemplate = urlParams.get('area-template') || 'fantasy-town';
+const initialAreaW = urlParams.get('area-w') ? parseInt(urlParams.get('area-w'), 10) : 60;
+const initialAreaH = urlParams.get('area-h') ? parseInt(urlParams.get('area-h'), 10) : 60;
 
 // Init GUI
 const { gui, options } = initGUI({
   app,
   generate,
   generateSite: generateSiteWrapper,
+  generateArea: generateAreaWrapper,
   initialScope,
   initialTemplate,
   initialTerrain,
@@ -262,6 +332,9 @@ const { gui, options } = initGUI({
   initialSiteW,
   initialSiteH,
   initialSiteFloors,
+  initialAreaTemplate,
+  initialAreaW,
+  initialAreaH,
 });
 
 if (initialScope === 'site') {
@@ -271,6 +344,13 @@ if (initialScope === 'site') {
     w: initialSiteW,
     h: initialSiteH,
     floors: initialSiteFloors,
+  });
+} else if (initialScope === 'area') {
+  generateAreaWrapper({
+    seed: initialSeed,
+    template: initialAreaTemplate,
+    w: initialAreaW,
+    h: initialAreaH,
   });
 } else {
   generate(initialTemplate, initialSeed, initialTerrain, initialClimate, initialSafety, initialSize, initialNumPoints, initialFeaturesEnabled, initialDisplayMode, initialTileSize);

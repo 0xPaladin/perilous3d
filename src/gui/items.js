@@ -80,6 +80,61 @@ export function initItemsPanel(app) {
     return;
   }
 
+  // Area mode — show districts, landmarks, roads, gates, waterfront
+  const AREA_TEMPLATES = ['fantasy-town', 'fantasy-city', 'fantasy-city-ruins', 'sci-fi-city-district', 'post-epoc-ruins', 'alien-ruins'];
+  if (state.template && AREA_TEMPLATES.includes(state.template)) {
+    panel.innerHTML = `
+      <div class="ip-header">Area: ${state.template}</div>
+      <select id="ip-category">
+        <option value="">Select category...</option>
+        <option value="districts">Districts</option>
+        <option value="landmarks">Landmarks</option>
+        <option value="roads">Roads</option>
+        <option value="gates">Gates</option>
+        <option value="waterfront">Waterfront</option>
+      </select>
+      <div id="ip-list"></div>
+    `;
+    const areaSelect = document.getElementById('ip-category');
+    const areaListEl = document.getElementById('ip-list');
+
+    const areaItems = {
+      districts: state.districts || [],
+      landmarks: state.landmarks || [],
+      roads: state.roads || [],
+      gates: state.gates || [],
+      waterfront: state.waterfront || [],
+    };
+
+    areaSelect.addEventListener('change', () => {
+      const cat = areaSelect.value;
+      if (!cat || !areaItems[cat].length) {
+        areaListEl.innerHTML = areaItems[cat] && areaItems[cat].length === 0 ? '<div class="ip-empty">None</div>' : '';
+        return;
+      }
+      let html = '';
+      for (let i = 0; i < areaItems[cat].length; i++) {
+        const item = areaItems[cat][i];
+        let label;
+        if (cat === 'districts') {
+          label = `${item.name || 'District'} ${i + 1}: (${item.x}, ${item.y})`;
+        } else if (cat === 'landmarks') {
+          label = `${item.name || 'Landmark'} ${i + 1}: (${item.x}, ${item.y})`;
+        } else if (cat === 'roads') {
+          label = `Road ${i + 1}: (${item.x1},${item.y1}) → (${item.x2},${item.y2}) [${item.length} tiles]`;
+        } else if (cat === 'gates') {
+          label = `Gate ${i + 1}: (${item.x}, ${item.y}) [${item.side}]`;
+        } else if (cat === 'waterfront') {
+          label = `Waterfront ${i + 1}: (${item.x}, ${item.y})`;
+        }
+        html += `<div class="ip-item" data-x="${item.x || item.x1}" data-z="${item.y || item.y1}">${label}</div>`;
+      }
+      areaListEl.innerHTML = html;
+    });
+
+    return;
+  }
+
   const items = {
     cities: state.cities || [],
     towns: state.towns || [],

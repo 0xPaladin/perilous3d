@@ -53,7 +53,19 @@ index.html
     ├── mesh/mesh_terrain.js   — Hill & dune tile generators
     ├── mesh/mesh_tree.js      — Tree + InstancedMesh forest generator
     ├── mesh/mesh_features.js  — Places meshDev mountains & forests on terrain
-    └── main.js                — Bootstrap: seed → buildRegion → createScene → animate → initGUI
+    ├── sites/                 — ASCII-only site generation (dungeons, hideouts, etc.)
+    │   ├── index.js           — generateSite() entry point, SITE_GLYPHS, CELL enum
+    │   ├── floorplan.js       — Organic floorplan (random walk)
+    │   ├── fill-floorplan.js  — Fill floorplan (rectangle/circle tiling)
+    │   └── room.js            — Room class for ROT.js-style rendering
+    ├── areas/                 — ASCII-only area generation (towns, cities, districts, ruins)
+    │   ├── index.js           — generateArea() entry point, AREA_GLYPHS
+    │   ├── fantasy-town.js    — createTown() — fantasy town with roads, plaza, landmarks
+    │   ├── fantasy-city.js    — createCity() — multi-centre fantasy city
+    │   ├── sci-fi-district.js — createDistrict() — cyberpunk/sci-fi district
+    │   ├── bay.js             — createBay() — carves a bay into map edge
+    │   └── river.js           — createRiver() — meandering river via midpoint displacement
+    └── main.js                — Bootstrap: seed → buildRegion/generateSite/generateArea → createScene/showAsciiMap → initGUI
 ```
 
 ## Terrain Generation Pipeline
@@ -141,27 +153,37 @@ python -m http.server 8000
 ### URL Parameters
 
 ```
-?template=island&seed=ABCD1234&terrain=highland&climate=Temperate&safety=1&size=320
+?scope=terrain&template=island&seed=ABCD1234&terrain=highland&climate=Temperate&safety=1&size=320
+?scope=site&seed=ABCD1234&site-template=hideout&site-w=40&site-h=30&site-floors=1
+?scope=area&seed=ABCD1234&area-template=fantasy-city&area-w=80&area-h=80
 ```
 
 | Param       | Values                                                  | Description                                              |
 | ----------- | ------------------------------------------------------- | -------------------------------------------------------- |
+| `scope`     | `terrain`, `site`, `area`                               | Generation mode (default: `terrain`)                     |
 | `template`  | `island`, `archipelago`, `coast`, `lake`, `land`          | Map template (affects land/water distribution)           |
 | `seed`      | any URL-safe string                                     | Deterministic map seed                                   |
 | `terrain`   | `wetland`, `lowland`, `woodland`, `highland`, `wasteland` | Terrain preset (land%, hills, ranges, lakes)           |
 | `climate`   | `Arctic`, `Sub-arctic`, `Temperate`, `Sub-tropical`, `Tropical` | Climate preset (base temperature)           |
 | `safety`    | 0–3                                                     | Cities: Perilous(0) / Dangerous(1) / Unsafe(2) / Safe(3) |
 | `size`      | 50–400                                                  | Map extent in km (default 320). Scales points, cells, mountains, cities, features by area |
+| `site-template` | `hideout`, `bandit-camp`, `lair`, `warehouse`, `dungeon` | Site template (scope=site)                             |
+| `site-w`    | 10–256                                                  | Site width in cells (scope=site)                         |
+| `site-h`    | 10–256                                                  | Site height in cells (scope=site)                        |
+| `site-floors` | 1–10                                                  | Number of floors (scope=site)                            |
+| `area-template` | `fantasy-town`, `fantasy-city`, `fantasy-city-ruins`, `sci-fi-city-district`, `post-epoc-ruins`, `alien-ruins` | Area template (scope=area) |
+| `area-w`    | 10–256                                                  | Area width in cells (scope=area)                         |
+| `area-h`    | 10–256                                                  | Area height in cells (scope=area)                        |
 
 ## Controls
 
 - **OrbitControls**: left-click rotate, right-click pan, scroll to zoom
 - **lil-gui** (top-right panel):
-  - **Template** → map template dropdown
-  - **Parameters** → Terrain (wetland/lowland/woodland/highland/wasteland), Climate (Arctic/Sub-arctic/Temperate/Sub-tropical/Tropical), Safety (Perilous/Dangerous/Unsafe/Safe), Map Size (50–400 km)
-  - **Actions** → `New Island`, `Update`
+  - **Display** → Scope (`terrain` / `site` / `area`), Display Mode (`3d` / `ascii`), Tile Size (5–80 km, ASCII only)
+  - **Parameters** → (terrain) Terrain, Climate, Safety, Map Size, Points, Place Features; (site) Template, Width, Height, Floors; (area) Template, Width, Height
+  - **Actions** → `New Region`, `Update`
   - **Info** → current seed (read-only)
-- **Locations panel** (left panel, below GUI): category select (Cities, Towns, Resources, Dungeons, Ruins, Landmarks, Outposts, Hazards, Obstacles, Areas, Trouble) → clickable item list → smooth fly-to camera; Zoom Out button returns to default view.
+- **Locations panel** (left panel, below GUI): category select (Cities, Towns, Resources, Dungeons, Ruins, Landmarks, Outposts, Hazards, Obstacles, Areas, Trouble) → clickable item list → smooth fly-to camera; Zoom Out button returns to default view. In site mode, shows Rooms, Doors, Stairs. In area mode, shows Districts, Landmarks, Roads, Gates, Waterfront.
 
 ## Habitability & Settlements
 
@@ -318,6 +340,71 @@ state = {
   cities, towns, resources, ruins, minorRuins, trouble, features,
   outpostSites, landmarkSites, factionSites, hazards, obstacles, areas,
   peoples,
+}
+```
+
+`generateSite(opts)` returns `{ display, state }`:
+
+```js
+display = { cols, rows, grid, width, height, walls }  // grid is 2D cell-type codes (0=wall, 1=floor, 2=door, 3=stairs)
+state = { template, floors, currentFloor, rooms, doors, stairs, walls, width, height }
+```
+
+`generateArea(opts)` returns `{ display, state }`:
+
+```js
+display = { cols, rows, grid, width, height }  // grid is 2D array of glyph characters
+state = { template, seed, width, height, districts, landmarks, roads, gates, waterfront }
+```
+
+## Area Generation (ASCII-only)
+
+Areas generate fantasy towns/cities, sci-fi districts, or post-apoc/alien ruins at a scale of **1 tile ≈ 100 m**. Like sites, area generation is ASCII-only — no 3D rendering.
+
+### Templates
+
+| Template | Generator | Description |
+| -------- | --------- | ----------- |
+| `fantasy-town` | `createTown()` | Procedural fantasy town with cross roads, central plaza, landmarks (temple, keep, smithy, tavern, town hall), housing districts, optional wall + gates |
+| `fantasy-city` | `createCity()` | Multi-centre fantasy city with district density field, road network, landmarks, optional outer wall |
+| `fantasy-city-ruins` | `createCity()` + decay | City with 15% buildings and 20% walls converted to rubble (`⊘`) |
+| `sci-fi-city-district` | `createDistrict()` | Cyberpunk district with multi-centre anchors, grid/organic roads, elevated highways, density-based building types |
+| `post-epoc-ruins` | `createTown()` + decay | Town decayed into ruins with radiation zones (`☢`) |
+| `alien-ruins` | `createTown()` + alien-ify | Town with buildings replaced by alien glyphs (`⌬`, `⍓`, `⌖`) |
+
+### Pipeline
+
+```
+Seed → seedFromString → numeric seed
+  → createBaseMap(w, h, '.')  // empty land map
+  → createBay(map, side, { seed, depth, width })  // optional, configurable
+  → createRiver(map, direction, { seed, meander, width })  // optional, configurable
+  → template generator (createTown/createCity/createDistrict)
+  → decay/alien-ify post-processing (for ruins templates)
+  → extractMetadata(grid)  // landmarks, roads, gates, waterfront
+  → { display, state }
+```
+
+### Area Glyphs
+
+Areas use `AREA_GLYPHS` from `src/areas/index.js` — a map of glyph characters to `{ ch, color, bg }` for ROT.js rendering. The grid contains glyph characters directly (not cell-type codes like sites).
+
+### Response Format
+
+`generateArea(opts)` returns `{ display, state }`:
+
+```js
+display = {
+  cols, rows, grid, width, height  // grid is 2D array of glyph characters
+}
+
+state = {
+  template, seed, width, height,
+  districts,  // [{ name, x, y, role }]
+  landmarks,  // [{ x, y, glyph, name }]
+  roads,      // [{ x1, y1, x2, y2, length }]
+  gates,      // [{ x, y, side }]
+  waterfront, // [{ x, y }]
 }
 ```
 
