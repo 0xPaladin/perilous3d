@@ -16,7 +16,7 @@
  * n,Medium-density housing
  * h,Sparse / outer residential
  * †,Temple
- * T,Palace / keep / noble house
+ * P,Palace / keep / noble house
  * H,Civic building / town hall
  * M,Workshop / mill / industry
  * &,Shop / tavern / commercial
@@ -279,7 +279,7 @@ export function createCity(map, options = {}) {
     placeNear('core', 'H', 1);     // civic
     placeNear('market', '&', 3);
     placeNear('temple', '†', 2);
-    placeNear('noble', 'T', 1);
+    placeNear('noble', 'P', 1);
     placeNear('craft', 'M', 3);
     placeNear('docks', 'D', 3);    // warehouses / docks
 

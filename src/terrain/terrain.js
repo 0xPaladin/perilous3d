@@ -61,69 +61,55 @@ export function buildRegion(template, seed, terrainType, baseTemp = 22, cityCoun
   voronoiDisplay.mounts = mounts;
   voronoiDisplay.mountainCount = mounts.length;
 
-  const emptyFeatures = {
-    resources: [], cities: [], towns: [], ruins: [], minorRuins: [],
-    trouble: [], features: [], outpostSites: [], landmarkSites: [],
-    factionSites: [], hazards: [], obstacles: [], areas: [],
+  let regionFeatures = {
+    resources: [],
+    cities: [],
+    towns: [],
+    ruins: [],
+    minorRuins: [],
+    trouble: [],
+    features: [],
+    outpostSites: [],
+    landmarkSites: [],
+    factionSites: [],
+    hazards: [],
+    obstacles: [],
+    areas: [],
+    peoples: []
   };
-  const {
-    resources = [],
-    cities = [],
-    towns = [],
-    ruins = [],
-    minorRuins = [],
-    trouble = [],
-    features = [],
-    outpostSites = [],
-    landmarkSites = [],
-    factionSites = [],
-    hazards = [],
-    obstacles = [],
-    areas = [],
-  } = featuresEnabled ? resolveFeatures({
-    rng,
-    pts,
-    h,
-    waterLevel: 0,
-    biome,
-    maxLandH,
-    habitability,
-    nearWater,
-    adj,
-    rivers,
-    cityCount,
-    extentSize,
-    areaRatio,
-    seed,
-    cells,
-    cellAdj,
-    cellIndexForPoint,
-  }) : emptyFeatures;
 
-  const peoples = generatePeoples(seed, { template, terrain: terrainType, baseTemp });
+  if (featuresEnabled) {
+    regionFeatures = resolveFeatures({
+      rng,
+      pts,
+      h,
+      waterLevel: 0,
+      biome,
+      maxLandH,
+      habitability,
+      nearWater,
+      adj,
+      rivers,
+      cityCount,
+      extentSize,
+      areaRatio,
+      seed,
+      cells,
+      cellAdj,
+      cellIndexForPoint,
+    })
 
-  const regionState = {
+    regionFeatures.peoples = generatePeoples(seed, { template, terrain: terrainType, baseTemp });
+  }
+
+  const regionState = Object.assign({
     seed,
     extent,
     template,
     terrain: terrainType,
     baseTemp,
-    cityCount,
-    cities,
-    towns,
-    resources,
-    ruins,
-    minorRuins,
-    trouble,
-    features,
-    outpostSites,
-    landmarkSites,
-    factionSites,
-    hazards,
-    obstacles,
-    areas,
-    peoples,
-  };
+    cityCount
+  }, regionFeatures);
 
   return { display: voronoiDisplay, state: regionState };
 }

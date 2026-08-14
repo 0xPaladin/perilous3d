@@ -41,7 +41,8 @@ export const AREA_GLYPHS = {
     'h': { ch: 'h', color: '#888888', bg: '#2e2e2e' },
     'o': { ch: 'o', color: '#ffff00', bg: '#333333' },
     '†': { ch: '†', color: '#ff6666', bg: '#333333' },
-    'T': { ch: 'T', color: '#ffaa00', bg: '#333333' },
+    'K': { ch: 'K', color: '#ffaa00', bg: '#333333' },
+    'P': { ch: 'P', color: '#b80da9', bg: '#333333' },
     'H': { ch: 'H', color: '#ffdd00', bg: '#333333' },
     'M': { ch: 'M', color: '#d4a76a', bg: '#333333' },
     '&': { ch: '&', color: '#ff88ff', bg: '#333333' },
@@ -57,7 +58,7 @@ export const AREA_GLYPHS = {
     'r': { ch: 'r', color: '#6699cc', bg: '#1a1a2e' },
     'S': { ch: 'S', color: '#888888', bg: '#111111' },
     'I': { ch: 'I', color: '#cc9900', bg: '#1a1a2e' },
-    '⛏': { ch: '⛏', color: '#00ff88', bg: '#1a1a2e' },
+    'T': { ch: 'T', color: '#00ff88', bg: '#1a1a2e' },
 
     // Post-apoc / alien (shared glyphs with distinct colors)
     '%': { ch: '%', color: '#aaaaaa', bg: '#333333' },
@@ -69,6 +70,24 @@ export const AREA_GLYPHS = {
     '⌬': { ch: '⌬', color: '#aa00ff', bg: '#0a0a1a' },
     '⍓': { ch: '⍓', color: '#00ffaa', bg: '#0a0a1a' },
     '⌖': { ch: '⌖', color: '#ff00aa', bg: '#0a0a1a' },
+};
+
+export const LANDMARK_GLYPFS = {
+    '†': 'Temple',
+    'K': 'Keep/Noble',
+    'P': 'Palace',
+    'H': 'Town Hall',
+    'M': 'Workshop/Mill',
+    '&': 'Tavern/Shop',
+    'D': 'Dock/Warehouse',
+    'o': 'Central Plaza',
+    'A': 'Arcology',
+    'C': 'Corporate Tower',
+    'T': 'Transit Hub',
+    'N': 'Neon Commercial',
+    'R': 'Residential High-rise',
+    'S': 'Lower City/Slum',
+    'I': 'Industrial Zone',
 };
 
 // Templates that use the fantasy-town generator
@@ -127,29 +146,12 @@ function extractMetadata(grid, w, h, waterChar = '~') {
     const gates = [];
     const waterfront = [];
 
-    const landmarkGlyphs = {
-        '†': 'Temple',
-        'T': 'Keep/Palace',
-        'H': 'Town Hall',
-        'M': 'Workshop/Mill',
-        '&': 'Tavern/Shop',
-        'D': 'Dock/Warehouse',
-        'o': 'Central Plaza',
-        'A': 'Arcology',
-        'C': 'Corporate Tower',
-        'N': 'Neon Commercial',
-        'R': 'Residential High-rise',
-        'S': 'Lower City/Slum',
-        'I': 'Industrial Zone',
-        '⛏': 'Transit Hub',
-    };
-
     // Scan for landmarks
     for (let y = 0; y < h; y++) {
         for (let x = 0; x < w; x++) {
             const ch = grid[y][x];
-            if (landmarkGlyphs[ch]) {
-                landmarks.push({ x, y, glyph: ch, name: landmarkGlyphs[ch] });
+            if (LANDMARK_GLYPFS[ch]) {
+                landmarks.push({ x, y, glyph: ch });
             }
             // Gates are '=' tiles on the map border
             if (ch === '=' && (x === 0 || x === w - 1 || y === 0 || y === h - 1)) {
@@ -177,7 +179,7 @@ function extractMetadata(grid, w, h, waterChar = '~') {
     const visited = new Set();
     for (let y = 0; y < h; y++) {
         for (let x = 0; x < w; x++) {
-            if (grid[y][x] === '=' && !visited.has(`${x},${y}`)) {
+            if (['=', '≡'].includes(grid[y][x]) && !visited.has(`${x},${y}`)) {
                 // BFS to find the road segment
                 const queue = [{ x, y }];
                 const segment = [];
@@ -189,7 +191,7 @@ function extractMetadata(grid, w, h, waterChar = '~') {
                     segment.push({ x: cx, y: cy });
                     for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
                         const nx = cx + dx, ny = cy + dy;
-                        if (nx >= 0 && nx < w && ny >= 0 && ny < h && grid[ny][nx] === '=' && !visited.has(`${nx},${ny}`)) {
+                        if (nx >= 0 && nx < w && ny >= 0 && ny < h && ['=', '≡'].includes(grid[ny][nx]) && !visited.has(`${nx},${ny}`)) {
                             queue.push({ x: nx, y: ny });
                         }
                     }

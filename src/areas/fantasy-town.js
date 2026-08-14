@@ -16,7 +16,7 @@
  * #,Dense urban fabric
  * n,Sparser / poorer housing
  * †,Temple
- * T,Palace / keep / noble house
+ * K, keep / noble house
  * H,Civic building / town hall
  * M,Workshop / mill / industry
  * &,Shop / tavern / commercial
@@ -195,7 +195,7 @@ export function createTown(map, options = {}) {
     }
 
     placeLandmark('†');   // temple
-    placeLandmark('T');   // keep / manor
+    placeLandmark('K');   // keep / manor
     placeLandmark('M');   // smith / mill
     placeLandmark('&');   // tavern
     placeLandmark('H');   // guildhall / town hall
@@ -205,7 +205,7 @@ export function createTown(map, options = {}) {
         for (let x = 0; x < W; x++) {
             if (isBlocked(x, y)) continue;
             if (grid[y][x] === '.' || grid[y][x] === 'o') continue;
-            if (['†', 'T', 'M', '&', 'H'].includes(grid[y][x])) continue;
+            if (['†', 'P', 'M', '&', 'H'].includes(grid[y][x])) continue;
 
             const d = dens[y][x];
             if (d < 0.22) continue;

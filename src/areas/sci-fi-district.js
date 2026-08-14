@@ -344,13 +344,13 @@ export function createDistrict(map, options = {}) {
         }
     }
 
-    stamp('core', 'A', 2, 2);
     stamp('corp', 'C', 2, 2);
-    stamp('transit', 'T', 1, 1);
     stamp('commercial', 'N', 3, 2);
     stamp('entertainment', 'N', 2, 2);
     stamp('industrial', 'I', 3, 2);
     stamp('residential', 'R', 1, 2);
+    stamp('core', 'A', 8, 1);
+    stamp('transit', 'T', 8, 1);
 
     // Small plazas at anchors
     for (const a of anchors) {
